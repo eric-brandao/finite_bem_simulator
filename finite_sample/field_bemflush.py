@@ -6,6 +6,7 @@ import matplotlib.tri as tri
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from plotly.offline import plot
 import plotly.graph_objects as go
+import plotly.io as pio
 # from insitu.controlsair import load_cfg
 import time
 from tqdm import tqdm
@@ -556,7 +557,7 @@ class BEMFlushSq(object):
         plt.show() # show plot
         
         
-    def plotly_scene(self, vsam_size = 2):
+    def plotly_scene(self, vsam_size = 2, renderer='notebook'):
         """ Plot of the scene using plotly
 
         Parameters
@@ -596,7 +597,8 @@ class BEMFlushSq(object):
                          marker=dict(size=4, color='blue',opacity=0.4)),
                       
             ])
-        plot(fig, auto_open=True)
+        #plot(fig, auto_open=True)
+        pio.renderers.default = renderer
         fig.show()
         
         
