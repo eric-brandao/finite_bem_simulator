@@ -667,10 +667,10 @@ class BEMFlushSq(object):
 #         plt.show() # show plot
 # =============================================================================
 
-    def plot_pres(self,):
+    def plot_pres(self, figsize = (7,5)):
         """ Plot the spectrum of the sound pressure for all receivers
         """
-        plot_spk(self.controls.freq, self.pres_s, ref = 20e-6)
+        plot_spk(self.controls.freq, self.pres_s, ref = 20e-6, figsize = figsize)
 
     def plot_uz(self):
         """ Plot the spectrum of the particle velocity in zdir for all receivers

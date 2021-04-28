@@ -148,12 +148,13 @@ def load_cfg(cfgfile):
     return config
 
 ### Function to make spk plots
-def plot_spk(freq, spk_in_sources, ref = 1.0, legendon = True, title='Spectrum'):
+def plot_spk(freq, spk_in_sources, ref = 1.0, legendon = True, title='Spectrum',
+             figsize = (7,5)):
     '''
     This function is used to make plots of the spectrum of pressure or
     particle velocity
     '''
-    fig, axs = plt.subplots(2,1)
+    fig, axs = plt.subplots(2,1, figsize = figsize)
     for js, spk_mtx in enumerate(spk_in_sources):
         # print('outer loop: {}'.format(js+1))
         # print(spk_mtx.shape)
