@@ -331,6 +331,8 @@ class BEMFlushSq(object):
         for js, s_coord in enumerate(self.sources.coord):
             hs = s_coord[2] # source height
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            bar = tqdm(total = self.receivers.coord.shape[0],
+                    desc = 'Processing sound spectrum at each field point')
             for jrec, r_coord in enumerate(self.receivers.coord):
                 xdist = (s_coord[0] - r_coord[0])**2.0
                 ydist = (s_coord[1] - r_coord[1])**2.0
@@ -338,22 +340,18 @@ class BEMFlushSq(object):
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
-                # print('Calculate p_scat and p_fp for rec: {}'.format(r_coord))
-                print('Calculate sound pressure for source {} at ({}) and receiver {} at ({})'.format(js+1, s_coord, jrec+1, r_coord))
-                # bar = ChargingBar('Processing sound pressure at field point', max=len(self.controls.k0), suffix='%(percent)d%%')
-                bar = tqdm(total = len(self.controls.k0),
-                    desc = 'Processing sound pressure at field point')
+# =============================================================================
+#                 print('Calculate sound pressure for source {} at ({}) and receiver {} at ({})'.format(js+1, s_coord, jrec+1, r_coord))
+#                 bar = tqdm(total = len(self.controls.k0),
+#                     desc = 'Processing sound pressure at field point')
+# =============================================================================
                 for jf, k0 in enumerate(self.controls.k0):
-# =============================================================================
-#                     p_scat = insitu_cpp._bemflush_pscat(r_coord, self.node_x, self.node_y,
-#                         self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
-# =============================================================================
                     p_scat = bemflush_pscat(r_coord, self.node_x, self.node_y,
                         self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
                     pres_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) +\
                         (np.exp(-1j * k0 * r2) / r2) + p_scat
-                    bar.update(1)
-                bar.close()
+                bar.update(1)
+            bar.close()
             self.pres_s.append(pres_rec)
 
     def uz_fps(self, compute_ux = False, compute_uy = False):
@@ -850,7 +848,7 @@ def zeta_weights():
 #@njit()
 def bemflush_mtx(el_center, node_x, node_y, Nzeta, Nweights, k0, beta):
     Nel = el_center.shape[0]
-    jacobian = ((el_center[1,0] - el_center[0,0])**2.0)/4.0
+    jacobian = ((el_center[1,0] - el_center[0,0])**2.0)/4.0 #Fix 5.26 p113
     # initialize
     bem_mtx = np.zeros((Nel, Nel), dtype = np.complex64)
     for i in np.arange(Nel):
@@ -860,7 +858,7 @@ def bemflush_mtx(el_center, node_x, node_y, Nzeta, Nweights, k0, beta):
         for j in np.arange(i, Nel):
             xnode = node_x[j,:]
             ynode = node_y[j,:]
-            xzeta = xnode @ Nzeta
+            xzeta = xnode @ Nzeta # Fix
             yzeta = ynode @ Nzeta
             # calculate the distance from el center to transformed integration points
             r = ((x_center - xzeta)**2 + (y_center - yzeta)**2)**0.5
