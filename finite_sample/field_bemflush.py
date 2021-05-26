@@ -13,10 +13,12 @@ from tqdm import tqdm
 import pickle
 
 # import impedance-py/C++ module and other stuff
-try:
-    import insitu_cpp
-except:
-    print("I could not find insitu_cpp. You should be able to load BEM files and add noise.")
+# =============================================================================
+# try:
+#     import insitu_cpp
+# except:
+#     print("I could not find insitu_cpp. You should be able to load BEM files and add noise.")
+# =============================================================================
 try:
     from insitu.controlsair import plot_spk
 except:
@@ -69,16 +71,16 @@ class BEMFlushSq(object):
     def psurf()
         Calculates the surface pressure of the BEM mesh
 
-    assemble_gij()
+    assemble_gij() -dis
         Assemble the BEM matrix.
 
-    psurf2()
+    psurf2() - dis
         Calculates p_surface using assembled gij_f matrixes.
 
     p_fps()
         Calculates the total sound pressure spectrum at the receivers coordinates.
 
-    uz_fps()
+    uz_fps() - dis
         Calculates the total particle velocity spectrum at the receivers coordinates.
 
     add_noise(snr = 30, uncorr = False)
@@ -90,7 +92,7 @@ class BEMFlushSq(object):
     plot_pres()
         Plot the spectrum of the sound pressure for all receivers
 
-    plot_uz()
+    plot_uz() - dis
         Plot the spectrum of the particle velocity in zdir for all receivers
 
     plot_colormap(freq = 1000):
@@ -106,7 +108,8 @@ class BEMFlushSq(object):
         Load a simulation object.
     """
 
-    def __init__(self, air = [], controls = [], material = [], sources = [], receivers = []):
+    def __init__(self, air = [], controls = [], material = [], sources = [], receivers = [],
+                 n_gauss = 36):
         """
 
         Parameters
@@ -130,6 +133,7 @@ class BEMFlushSq(object):
         self.material = material
         self.sources = sources
         self.receivers = receivers
+        self.n_gauss = n_gauss
         try:
             self.beta = (self.air.rho0 * self.air.c0) / self.material.Zs  # normalized surface admitance
         except:
@@ -138,13 +142,7 @@ class BEMFlushSq(object):
         self.ux_s = []
         self.uy_s = []
         self.uz_s = []
-        # Load Gauss points and weights
-        # with open('/home/eric/dev/insitu/data/' + 'gauss_data' + '.pkl', 'rb') as input:
-        #     Nzeta = pickle.load(input)
-        #     Nweights = pickle.load(input)
-        # self.Nzeta = Nzeta
-        # self.Nweights = Nweights
-        self.Nzeta, self.Nweights = zeta_weights()
+        #self.Nzeta, self.Nweights = ksi_weights_mtx(n_gauss = n_gauss) #zeta_weights()
         # print("pause")
 
     def generate_mesh(self, Lx = 1.0, Ly = 1.0, el_size = 0.05, Nel_per_wavelenth = []):
@@ -171,7 +169,7 @@ class BEMFlushSq(object):
             el_size = el_size #self.air.c0 / (Nel_per_wavelenth * freq_max)
         else:
             el_size = self.air.c0 / (Nel_per_wavelenth * freq_max)
-        print('The el_size is: {}'.format(el_size))
+        #print('The el_size is: {}'.format(el_size))
         # Number of elementes spaning x and y directions
         Nel_x = np.int(np.ceil(Lx / el_size))
         Nel_y = np.int(np.ceil(Ly / el_size))
@@ -199,7 +197,7 @@ class BEMFlushSq(object):
     def psurf(self,):
         """ Calculates the surface pressure of the BEM mesh.
 
-        Uses C++ implemented module.
+        Uses the Python implemented module.
         The surface pressure calculation represents the first step in a BEM simulation.
         It will assemble the BEM matrix and solve for the surface pressure
         based on the incident sound pressure. Each column is
@@ -210,13 +208,15 @@ class BEMFlushSq(object):
         On the other hand, if you want to simulate with a different source(s) configuration
         you will have to re-compute the BEM simulation.
         """
+        # Get shape functions and weights
+        Nksi, Nweights = ksi_weights_mtx(n_gauss = self.n_gauss)     
         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
         Nel = len(self.el_center)
-        self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=np.csingle)
+        self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=complex)
         # Generate the C matrix
-        c_mtx = 0.5 * np.identity(Nel, dtype = np.float32)
+        c_mtx = 0.5 * np.identity(Nel)
         # Calculate the distance from source to each element center
-        el_3Dcoord = np.zeros((Nel, 3), dtype=np.float32)
+        el_3Dcoord = np.zeros((Nel, 3))
         el_3Dcoord[:,0:2] = self.el_center
         rsel = np.repeat(np.reshape(self.sources.coord[0,:],(1,3)),Nel,axis=0)-\
             el_3Dcoord
@@ -227,98 +227,94 @@ class BEMFlushSq(object):
         for jf, k0 in enumerate(self.controls.k0):
             #Version 1 (distances in loop) - most time spent here
             gij = bemflush_mtx(self.el_center, self.node_x, self.node_y,
-                self.Nzeta, self.Nweights.T, k0, self.beta[jf])
-# =============================================================================
-#             gij = insitu_cpp._bemflush_mtx(self.el_center, self.node_x, self.node_y,
-#                self.Nzeta, self.Nweights.T, k0, self.beta[jf])
-# =============================================================================
+                Nksi, Nweights, k0, self.beta[jf])
             # Calculate the unperturbed pressure
             p_unpt = 2.0 * np.exp(-1j * k0 * r_unpt) / r_unpt
             # Solve system of equations
-            # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))
-            
-            self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
-            
-            bar.update(1)
-        bar.close()
-        tend = time.time()
-        print("elapsed time: {}".format(tend-tinit))
-
-    def assemble_gij(self,):
-        """ Assemble the BEM matrix.
-
-        Uses C++ implemented module.
-        Assembles a Nel x Nel matrix of complex numbers for each frequency step.
-        It is memory consuming. On the other hand, it is independent of the sound sources.
-        If you store this matrix, you can change the positions of sound sources
-        and use the information in memory to calculate the p_surface attribute.
-        This can save time in simulations where you vary such parametes. The calculation of
-        surface pressure (based on the incident sound pressure) should be done later.
-        """
-        # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
-        el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
-        el_3Dcoord[:,0:2] = self.el_center
-        # Set a time count for performance check
-        tinit = time.time()
-        # bar = ChargingBar('Assembling BEM matrix for each frequency step',
-        #     max=len(self.controls.k0), suffix='%(percent)d%%')
-        bar = tqdm(total = len(self.controls.k0),
-            desc = 'Assembling BEM matrix for each frequency step')
-        self.gij_f = []
-        # print(dir(insitu_cpp))
-        for jf, k0 in enumerate(self.controls.k0):
-            gij = bemflush_mtx(self.el_center, self.node_x, self.node_y,
-            self.Nzeta, self.Nweights.T, k0, self.beta[jf])
-            self.gij_f.append(gij)
-            bar.update(1)
-        bar.close()
-        #     bar.next()
-        # bar.finish()
-        tend = time.time()
-        print("elapsed time: {}".format(tend-tinit))
-
-    def psurf2(self,):
-        """ Calculates p_surface using assembled gij_f matrixes.
-
-        Uses C++ implemented module.
-        The surface pressure calculation represents the first step in a BEM simulation.
-        It will use assembled BEM matrix (from assemble_gij) and solve for
-        the surface pressure based on the incident sound pressure. Each column is
-        a complex surface pressure for each element in the mesh. Each row represents
-        the evolution of frequency for a single element in the mesh.
-        Therefore, there are N vs len(self.controls.freq) entries in this matrix.
-        This method saves processing time, compared to the use of psurf. You need to run it
-        if you change sound source(s) configuration (no need to run assemble_gij again)..
-        """
-        # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
-        Nel = len(self.el_center)
-        self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=np.csingle)
-        # Generate the C matrix
-        c_mtx = 0.5 * np.identity(len(self.el_center), dtype = np.float32)
-        # Calculate the distance from source to each element center
-        el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
-        el_3Dcoord[:,0:2] = self.el_center
-        rsel = np.repeat(np.reshape(self.sources.coord[0,:],(1,3)),len(self.el_center),axis=0)-\
-            el_3Dcoord
-        r_unpt = np.linalg.norm(rsel, axis = 1)
-        tinit = time.time()
-        # bar = ChargingBar('Calculating the surface pressure for each frequency step (method 2)',
-        #     max=len(self.controls.k0), suffix='%(percent)d%%')
-        bar = tqdm(total = len(self.controls.k0),
-            desc = 'Calculating the surface pressure for each frequency step (method 2)')
-        for jf, k0 in enumerate(self.controls.k0):
-            gij = self.gij_f[jf]
-            # Calculate the unperturbed pressure
-            p_unpt = 2.0 * np.exp(-1j * k0 * r_unpt) / r_unpt
-            # Solve system of equations
-            # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))
+            # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))         
             self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
             bar.update(1)
         bar.close()
-        #     bar.next()
-        # bar.finish()
         tend = time.time()
-        print("elapsed time: {}".format(tend-tinit))
+        #print("elapsed time: {}".format(tend-tinit))
+
+# =============================================================================
+#     def assemble_gij(self,):
+#         """ Assemble the BEM matrix.
+# 
+#         Uses C++ implemented module.
+#         Assembles a Nel x Nel matrix of complex numbers for each frequency step.
+#         It is memory consuming. On the other hand, it is independent of the sound sources.
+#         If you store this matrix, you can change the positions of sound sources
+#         and use the information in memory to calculate the p_surface attribute.
+#         This can save time in simulations where you vary such parametes. The calculation of
+#         surface pressure (based on the incident sound pressure) should be done later.
+#         """
+#         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
+#         el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
+#         el_3Dcoord[:,0:2] = self.el_center
+#         # Set a time count for performance check
+#         tinit = time.time()
+#         # bar = ChargingBar('Assembling BEM matrix for each frequency step',
+#         #     max=len(self.controls.k0), suffix='%(percent)d%%')
+#         bar = tqdm(total = len(self.controls.k0),
+#             desc = 'Assembling BEM matrix for each frequency step')
+#         self.gij_f = []
+#         # print(dir(insitu_cpp))
+#         for jf, k0 in enumerate(self.controls.k0):
+#             gij = bemflush_mtx(self.el_center, self.node_x, self.node_y,
+#             self.Nzeta, self.Nweights.T, k0, self.beta[jf])
+#             self.gij_f.append(gij)
+#             bar.update(1)
+#         bar.close()
+#         #     bar.next()
+#         # bar.finish()
+#         tend = time.time()
+#         #print("elapsed time: {}".format(tend-tinit))
+# 
+#     def psurf2(self,):
+#         """ Calculates p_surface using assembled gij_f matrixes.
+# 
+#         Uses C++ implemented module.
+#         The surface pressure calculation represents the first step in a BEM simulation.
+#         It will use assembled BEM matrix (from assemble_gij) and solve for
+#         the surface pressure based on the incident sound pressure. Each column is
+#         a complex surface pressure for each element in the mesh. Each row represents
+#         the evolution of frequency for a single element in the mesh.
+#         Therefore, there are N vs len(self.controls.freq) entries in this matrix.
+#         This method saves processing time, compared to the use of psurf. You need to run it
+#         if you change sound source(s) configuration (no need to run assemble_gij again)..
+#         """
+#         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
+#         Nel = len(self.el_center)
+#         self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=np.csingle)
+#         # Generate the C matrix
+#         c_mtx = 0.5 * np.identity(len(self.el_center), dtype = np.float32)
+#         # Calculate the distance from source to each element center
+#         el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
+#         el_3Dcoord[:,0:2] = self.el_center
+#         rsel = np.repeat(np.reshape(self.sources.coord[0,:],(1,3)),len(self.el_center),axis=0)-\
+#             el_3Dcoord
+#         r_unpt = np.linalg.norm(rsel, axis = 1)
+#         tinit = time.time()
+#         # bar = ChargingBar('Calculating the surface pressure for each frequency step (method 2)',
+#         #     max=len(self.controls.k0), suffix='%(percent)d%%')
+#         bar = tqdm(total = len(self.controls.k0),
+#             desc = 'Calculating the surface pressure for each frequency step (method 2)')
+#         for jf, k0 in enumerate(self.controls.k0):
+#             gij = self.gij_f[jf]
+#             # Calculate the unperturbed pressure
+#             p_unpt = 2.0 * np.exp(-1j * k0 * r_unpt) / r_unpt
+#             # Solve system of equations
+#             # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))
+#             self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
+#             bar.update(1)
+#         bar.close()
+#         #     bar.next()
+#         # bar.finish()
+#         tend = time.time()
+#         print("elapsed time: {}".format(tend-tinit))
+# =============================================================================
 
     def p_fps(self,):
         """ Calculates the total sound pressure spectrum at the receivers coordinates.
@@ -326,11 +322,14 @@ class BEMFlushSq(object):
         The sound pressure spectrum is calculatef for all receivers (attribute of class).
         The quantity calculated is the total sound pressure = incident + scattered.
         """
+        # Get shape functions and weights
+        Nksi, Nweights = ksi_weights_mtx(n_gauss = self.n_gauss)  
         # Loop the receivers
         self.pres_s = []
         for js, s_coord in enumerate(self.sources.coord):
             hs = s_coord[2] # source height
-            pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)),
+                                dtype = complex)
             bar = tqdm(total = self.receivers.coord.shape[0],
                     desc = 'Processing sound spectrum at each field point')
             for jrec, r_coord in enumerate(self.receivers.coord):
@@ -340,92 +339,89 @@ class BEMFlushSq(object):
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
-# =============================================================================
-#                 print('Calculate sound pressure for source {} at ({}) and receiver {} at ({})'.format(js+1, s_coord, jrec+1, r_coord))
-#                 bar = tqdm(total = len(self.controls.k0),
-#                     desc = 'Processing sound pressure at field point')
-# =============================================================================
                 for jf, k0 in enumerate(self.controls.k0):
                     p_scat = bemflush_pscat(r_coord, self.node_x, self.node_y,
-                        self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
+                        Nksi, Nweights, k0, self.beta[jf], self.p_surface[:,jf])
                     pres_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) +\
                         (np.exp(-1j * k0 * r2) / r2) + p_scat
                 bar.update(1)
             bar.close()
             self.pres_s.append(pres_rec)
 
-    def uz_fps(self, compute_ux = False, compute_uy = False):
-        """ Calculates the total particle velocity spectrum at the receivers coordinates.
-
-        The particle velocity spectrum is calculatef for all receivers (attribute of class).
-        The quantity calculated is the total particle velocity = incident + scattered.
-        The z-direction of particle velocity is always computed. x and y directions are optional.
-
-        Parameters
-        ----------
-        compute_ux : bool
-            Whether to compute x component of particle velocity or not (Default is False)
-        compute_uy : bool
-            Whether to compute y component of particle velocity or not (Default is False)
-        """
-        # Loop the receivers
-        if compute_ux and compute_uy:
-            message = 'Processing particle velocity (x,y,z dir at field point)'
-        elif compute_ux:
-            message = 'Processing particle velocity (x,z dir at field point)'
-        elif compute_uy:
-            message = 'Processing particle velocity (y,z dir at field point)'
-        else:
-            message = 'Processing particle velocity (z dir at field point)'
-
-        for js, s_coord in enumerate(self.sources.coord):
-            hs = s_coord[2] # source height
-            uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
-            if compute_ux:
-                ux_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
-            if compute_uy:
-                uy_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
-            for jrec, r_coord in enumerate(self.receivers.coord):
-                r = ((s_coord[0] - r_coord[0])**2.0 + (s_coord[1] - r_coord[1])**2.0)**0.5 # horizontal distance source-receiver
-                zr = r_coord[2]  # receiver height
-                r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
-                r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
-                print('Calculate particle vel. (z-dir) for source {} and receiver {}'.format(js+1, jrec+1))
-                # bar = ChargingBar('Processing particle velocity z-dir',
-                #     max=len(self.controls.k0), suffix='%(percent)d%%')
-                bar = tqdm(total = len(self.controls.k0),
-                    desc = message)
-                for jf, k0 in enumerate(self.controls.k0):
-                    uz_scat = insitu_cpp._bemflush_uzscat(r_coord, self.node_x, self.node_y,
-                        self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
-                    # print(uz_scat)
-                    # print('p_scat for freq {} Hz is: {}'.format(self.controls.freq[jf], p_scat))
-                    uz_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
-                        (1 + (1 / (1j * k0 * r1)))* ((hs - zr)/r1)-\
-                        (np.exp(-1j * k0 * r2) / r2) *\
-                        (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) - uz_scat
-                    if compute_ux:
-                        ux_scat = insitu_cpp._bemflush_uxscat(r_coord, self.node_x, self.node_y,
-                            self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
-                        ux_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
-                            (1 + (1 / (1j * k0 * r1)))* (-r_coord[0]/r1)-\
-                            (np.exp(-1j * k0 * r2) / r2) *\
-                            (1 + (1 / (1j * k0 * r2))) * (-r_coord[0]/r2) - ux_scat
-                    if compute_uy:
-                        uy_scat = insitu_cpp._bemflush_uyscat(r_coord, self.node_x, self.node_y,
-                            self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
-                        uy_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
-                            (1 + (1 / (1j * k0 * r1)))* (-r_coord[1]/r1)-\
-                            (np.exp(-1j * k0 * r2) / r2) *\
-                            (1 + (1 / (1j * k0 * r2))) * (-r_coord[1]/r2) - uy_scat
-                    # Progress bar stuff
-                    bar.update(1)
-                bar.close()
-            self.uz_s.append(uz_rec)
-            if compute_ux:
-                self.ux_s.append(ux_rec)
-            if compute_uy:
-                self.uy_s.append(uy_rec)
+# =============================================================================
+#     def uz_fps(self, compute_ux = False, compute_uy = False):
+#         """ Calculates the total particle velocity spectrum at the receivers coordinates.
+# 
+#         The particle velocity spectrum is calculatef for all receivers (attribute of class).
+#         The quantity calculated is the total particle velocity = incident + scattered.
+#         The z-direction of particle velocity is always computed. x and y directions are optional.
+# 
+#         Parameters
+#         ----------
+#         compute_ux : bool
+#             Whether to compute x component of particle velocity or not (Default is False)
+#         compute_uy : bool
+#             Whether to compute y component of particle velocity or not (Default is False)
+#         """
+#         # Loop the receivers
+#         if compute_ux and compute_uy:
+#             message = 'Processing particle velocity (x,y,z dir at field point)'
+#         elif compute_ux:
+#             message = 'Processing particle velocity (x,z dir at field point)'
+#         elif compute_uy:
+#             message = 'Processing particle velocity (y,z dir at field point)'
+#         else:
+#             message = 'Processing particle velocity (z dir at field point)'
+# 
+#         for js, s_coord in enumerate(self.sources.coord):
+#             hs = s_coord[2] # source height
+#             uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+#             if compute_ux:
+#                 ux_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+#             if compute_uy:
+#                 uy_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+#             for jrec, r_coord in enumerate(self.receivers.coord):
+#                 r = ((s_coord[0] - r_coord[0])**2.0 + (s_coord[1] - r_coord[1])**2.0)**0.5 # horizontal distance source-receiver
+#                 zr = r_coord[2]  # receiver height
+#                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
+#                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
+#                 print('Calculate particle vel. (z-dir) for source {} and receiver {}'.format(js+1, jrec+1))
+#                 # bar = ChargingBar('Processing particle velocity z-dir',
+#                 #     max=len(self.controls.k0), suffix='%(percent)d%%')
+#                 bar = tqdm(total = len(self.controls.k0),
+#                     desc = message)
+#                 for jf, k0 in enumerate(self.controls.k0):
+#                     uz_scat = insitu_cpp._bemflush_uzscat(r_coord, self.node_x, self.node_y,
+#                         self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
+#                     # print(uz_scat)
+#                     # print('p_scat for freq {} Hz is: {}'.format(self.controls.freq[jf], p_scat))
+#                     uz_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+#                         (1 + (1 / (1j * k0 * r1)))* ((hs - zr)/r1)-\
+#                         (np.exp(-1j * k0 * r2) / r2) *\
+#                         (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) - uz_scat
+#                     if compute_ux:
+#                         ux_scat = insitu_cpp._bemflush_uxscat(r_coord, self.node_x, self.node_y,
+#                             self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
+#                         ux_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+#                             (1 + (1 / (1j * k0 * r1)))* (-r_coord[0]/r1)-\
+#                             (np.exp(-1j * k0 * r2) / r2) *\
+#                             (1 + (1 / (1j * k0 * r2))) * (-r_coord[0]/r2) - ux_scat
+#                     if compute_uy:
+#                         uy_scat = insitu_cpp._bemflush_uyscat(r_coord, self.node_x, self.node_y,
+#                             self.Nzeta, self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
+#                         uy_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+#                             (1 + (1 / (1j * k0 * r1)))* (-r_coord[1]/r1)-\
+#                             (np.exp(-1j * k0 * r2) / r2) *\
+#                             (1 + (1 / (1j * k0 * r2))) * (-r_coord[1]/r2) - uy_scat
+#                     # Progress bar stuff
+#                     bar.update(1)
+#                 bar.close()
+#             self.uz_s.append(uz_rec)
+#             if compute_ux:
+#                 self.ux_s.append(ux_rec)
+#             if compute_uy:
+#                 self.uy_s.append(uy_rec)
+# =============================================================================
 
     def add_noise(self, snr = 30, uncorr = False):
         """ Add gaussian noise to the simulated data.
@@ -599,81 +595,17 @@ class BEMFlushSq(object):
         pio.renderers.default = renderer
         fig.show()
         
-        
-# =============================================================================
-#         fig = plt.figure()
-#         fig.canvas.set_window_title("Measurement scene")
-#         ax = fig.gca(projection='3d')
-#         # vertexes plot
-#         if mesh:
-#             for jel in np.arange(len(self.el_center)):
-#                 nodex_el = self.node_x[jel]
-#                 nodey_el = self.node_y[jel]
-#                 nodex = np.reshape(nodex_el.flatten(), (4, 1))
-#                 nodey = np.reshape(nodey_el.flatten(), (4, 1))
-#                 nodez = np.reshape(np.zeros(4), (4, 1))
-#                 vertices = np.concatenate((nodex, nodey, nodez), axis=1)
-#                 verts = [list(zip(vertices[:,0],
-#                         vertices[:,1], vertices[:,2]))]
-#                 # mesh points
-#                 for v in verts[0]:
-#                     ax.scatter(v[0], v[1], v[2],
-#                     color='black',  marker = "o", s=1)
-#                 # patch plot
-#                 collection = Poly3DCollection(verts,
-#                     linewidths=1, alpha=0.9, edgecolor = 'gray', zorder=1)
-#                 collection.set_facecolor('silver')
-#                 ax.add_collection3d(collection)
-#         # baffle
-#         else:
-#             vertices = np.array([[-self.Lx/2, -self.Ly/2, 0.0],
-#                 [self.Lx/2, -self.Ly/2, 0.0],
-#                 [self.Lx/2, self.Ly/2, 0.0],
-#                 [-self.Lx/2, self.Ly/2, 0.0]])
-#             verts = [list(zip(vertices[:,0],
-#                     vertices[:,1], vertices[:,2]))]
-#             # patch plot
-#             collection = Poly3DCollection(verts,
-#                 linewidths=2, alpha=0.9, edgecolor = 'black', zorder=2)
-#             collection.set_facecolor('silver')
-#             ax.add_collection3d(collection)
-#         # plot source
-#         for s_coord in self.sources.coord:
-#             ax.scatter(s_coord[0], s_coord[1], s_coord[2],
-#                 color='red',  marker = "o", s=200)
-#         # plot receiver
-#         for r_coord in self.receivers.coord:
-#             ax.scatter(r_coord[0], r_coord[1], r_coord[2],
-#                 color='blue',  marker = "o", alpha = 0.35)
-#         ax.set_xlabel('X axis')
-#         # plt.xticks([], [])
-#         ax.set_ylabel('Y axis')
-#         # plt.yticks([], [])
-#         ax.set_zlabel('Z axis')
-#         # ax.grid(linestyle = ' ', which='both')
-#         ax.set_xlim((-vsam_size/2, vsam_size/2))
-#         ax.set_ylim((-vsam_size/2, vsam_size/2))
-#         ax.set_zlim((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
-#         # ax.set_zlim((0, 0.3))
-#         # ax.set_zticks((0, 1.2*np.amax(np.linalg.norm(self.sources.coord))))
-#         ax.set_zticks((0, 0.1, 0.2, 0.3))
-#         ax.set_xticks((-1, -0.5, 0.0, 0.5, 1.0))
-#         ax.set_yticks((-1, -0.5, 0.0, 0.5, 1.0))
-# 
-#         ax.view_init(elev=10, azim=45)
-#         # ax.invert_zaxis()
-#         plt.show() # show plot
-# =============================================================================
-
     def plot_pres(self, figsize = (7,5)):
         """ Plot the spectrum of the sound pressure for all receivers
         """
         plot_spk(self.controls.freq, self.pres_s, ref = 20e-6, figsize = figsize)
 
-    def plot_uz(self):
-        """ Plot the spectrum of the particle velocity in zdir for all receivers
-        """
-        plot_spk(self.controls.freq, self.uz_s, ref = 5e-8)
+# =============================================================================
+#     def plot_uz(self):
+#         """ Plot the spectrum of the particle velocity in zdir for all receivers
+#         """
+#         plot_spk(self.controls.freq, self.uz_s, ref = 5e-8)
+# =============================================================================
 
     def plot_colormap(self, freq = 1000, total_pres = True,  dinrange = 20):
         """Plots a color map of the pressure field.
@@ -812,8 +744,212 @@ class BEMFlushSq(object):
         f.close()
         self.__dict__.update(tmp_dict)
 
+################## Functions #################################################
+def ksi_weights_mtx(n_gauss = 36):
+    """ Calculates Nksi and Nweights matrices
+    
+    This function calculates Nksi and Nweights matrices to be used in Gaussian
+    quadrature matrix integration of squared elements. It will return the 
+    shape functions as a matrix of 4 x n_gauss elements and a vector of weights
+    of n_gauss elements. Only certain number of gauss points are allowed: 
+    4, 16 and 36 - this approach avoids singularity in the case of collocation
+    point located at the center of the element being integrated.
+    
+    
+    Parameters
+    ----------
+    n_gauss : int
+        the number of gauss points desired. Can be 4, 16 and 36. If another
+        number is choosen, 36 points are automatically selected
+        
+    Returns
+    ----------
+    Nksi : numpy ndArray
+        shape functions as a matrix of 4 x n_gauss elements
+    Nweights : numpy 1dArray
+        vector of weights of n_gauss elements
+    """
+    # Initialize
+    Nksi = np.zeros((4, n_gauss))
+    Nweights = np.zeros(n_gauss)
+    
+    # Write ksi1, ksi2 and weights
+    if n_gauss == 4:
+        a = np.sqrt(1/3)
+        ksi1 = np.array([-a, a, a, -a])
+        ksi2 = np.array([-a, -a, a, a])
+        Nweights += 1 
+    elif n_gauss == 16:
+        a = np.sqrt((3+2*np.sqrt(6/5))/7)
+        b = np.sqrt((3-2*np.sqrt(6/5))/7)
+        ksi1 = np.array([-a, -a, a, a, -b, -b, b, b, -a, -a, a, a, -b, -b, b, b])
+        ksi2 = np.array([-a, a, a, -a, -b, b, b, -b, -b, b, -b, b, -a, a, a, -a])
+        Nweights[0:4] = 0.1210029932856020
+        Nweights[4:8] = 0.4252933030106942 
+        Nweights[8:] = 0.2268518518518519
+    else:
+        ksi_line = np.array([-0.93246951, -0.66120939, -0.23861918,
+                             0.23861918, 0.66120939, 0.93246951])
+        ksi1g, ksi2g = np.meshgrid(ksi_line, ksi_line)
+        ksi1 = ksi1g.flatten()
+        ksi2 = ksi2g.flatten()
+        weights = np.array([[0.17132449, 0.36076157, 0.46791393,
+                            0.46791393, 0.36076157, 0.17132449]])
+        weights_mtx = np.dot(weights.T, weights)
+        Nweights = weights_mtx.flatten()
+         
+    # write shape functions
+    Nksi[0,:] = 0.25 * (1-ksi1)*(1-ksi2)
+    Nksi[1,:] = 0.25 * (1+ksi1)*(1-ksi2)
+    Nksi[2,:] = 0.25 * (1+ksi1)*(1+ksi2)
+    Nksi[3,:] = 0.25 * (1-ksi1)*(1+ksi2)
+    
+    return Nksi, Nweights
+
+#@njit()
+def bemflush_mtx(el_center, node_x, node_y, Nksi, Nweights, k0, beta):
+    """ Forms the BEM matrix
+    
+    For each collocation point (element center), computes the Rayleigh integral.
+    We span all elements relative to all elements. We form a symmetric matrix
+    of the BEM problem to be inverted.
+    
+    Parameters
+    ----------
+    el_center : numpy ndArray
+        a (Nel x 2) matrix containing the xy coordinates of element centers
+    node_x : numpy ndArray
+        a (Nel x 4) matrix containing the coordinates of element x vertices
+    node_y : numpy ndArray
+        a (Nel x 4) matrix containing the coordinates of element y vertices
+    Nksi : numpy ndArray
+        shape functions as a matrix of 4 x n_gauss elements
+    Nweights : numpy 1dArray
+        vector of weights of n_gauss elements
+    k0 : float
+        sound wave-number at a frequency
+    beta : float complex
+        boundary condition at a frequency (surface admitance)
+    Returns
+    ----------
+    bem_mtx : numpy ndArray
+        a (Nel x Nel) symmetric matrix to be inverted
+    """
+    Nel = el_center.shape[0]
+    jacobian = ((el_center[1,0] - el_center[0,0])**2.0)/4.0 #Fix 5.26 p113
+    # initialize
+    bem_mtx = np.zeros((Nel, Nel), dtype = np.complex64)
+    for i in np.arange(Nel):
+        xy_center = el_center[i,:]
+        x_center = xy_center[0] * np.ones(Nksi.shape[1])
+        y_center = xy_center[1] * np.ones(Nksi.shape[1])
+        for j in np.arange(i, Nel):
+            xnode = node_x[j,:]
+            ynode = node_y[j,:]
+            xzeta = np.dot(xnode, Nksi) # xnode @ Nksi # Fix and check global dommain
+            yzeta = np.dot(ynode, Nksi) #ynode @ Nksi
+            # calculate the distance from el center to transformed integration points
+            r = ((x_center - xzeta)**2 + (y_center - yzeta)**2)**0.5
+            g = 1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+            #print(g.astype(np.complex64).dtype)
+            bem_mtx[i,j] = np.dot(Nweights, g) #g @ Nweights
+    for i in np.arange(Nel-1):
+        for j in np.arange(i+1, Nel):
+            bem_mtx[j,i] = bem_mtx[i,j] 
+    return bem_mtx
+
+def bemflush_pscat(r_coord, node_x, node_y, Nksi, Nweights, k0, beta, ps):
+    """ Computes the scattered part of the sound field at a field point
+    
+    For a given field point, computes the scattered part of the sound field.
+    We span all elements' contribution to the receiver. First, we compute the
+    Rayleigh's integral for each element and then combine it with the surface
+    pressure (amplitude of each monopole) to get the scattering contribution.
+    
+    Parameters
+    ----------
+    r_coord : numpy ndArray
+        a (3,) vector containing the coordinates of the receiver
+    node_x : numpy ndArray
+        a (Nel x 4) matrix containing the coordinates of element x vertices
+    node_y : numpy ndArray
+        a (Nel x 4) matrix containing the coordinates of element y vertices
+    Nksi : numpy ndArray
+        shape functions as a matrix of 4 x n_gauss elements
+    Nweights : numpy 1dArray
+        vector of weights of n_gauss elements
+    k0 : float
+        sound wave-number at a frequency
+    beta : float complex
+        boundary condition at a frequency (surface admitance)
+    ps : numpy ndArray
+        (Nel, ) vector containing the surface pressure at each element for
+        a frequency
+    Returns
+    ----------
+    p_scat : float complex
+        scattered pressure at receiver
+    """
+    
+    # Vector of receiver coordinates (for vectorized integration)
+    x_coord = r_coord[0] * np.ones(Nksi.shape[1])
+    y_coord = r_coord[1] * np.ones(Nksi.shape[1])
+    z_coord = r_coord[2] * np.ones(Nksi.shape[1])
+    
+    # Number of elements and jacobian
+    Nel = node_x.shape[0]
+    jacobian = ((node_x[1,0] - node_x[0,0])**2.0)/4.0;
+    # Initialization
+    gfield = np.zeros(Nel, dtype = np.complex64) #np.complex64
+    #Loop through elements once
+    for j in np.arange(Nel):
+        # Transform the coordinate system for integration between -1,1 and +1,+1
+        xnode = node_x[j,:]
+        ynode = node_y[j,:]
+        xzeta = np.dot(xnode, Nksi) #xnode @ Nksi
+        yzeta = np.dot(ynode, Nksi) #ynode @ Nksi
+        # Calculate the distance from el center to transformed integration points
+        r = ((x_coord - xzeta)**2 + (y_coord - yzeta)**2 + z_coord**2)**0.5
+        # Calculate green function
+        g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+        # Integrate
+        gfield[j] = np.dot(Nweights, g) #g @ Nweights;
+    p_scat = np.dot(gfield, ps) #gfield @ ps
+    return p_scat
+
+def gaussint_sq(r_coord, nodes, Nzeta, Nweights, k0, beta = 1+0*1j):
+    # Vector of receiver coordinates (for vectorized integration)
+    x_coord = r_coord[0] * np.ones(Nzeta.shape[1])
+    y_coord = r_coord[1] * np.ones(Nzeta.shape[1])
+    z_coord = r_coord[2] * np.ones(Nzeta.shape[1])
+    # Jacobian of squared element
+    jacobian = ((nodes[:,0][1] - nodes[:,0][0])**2.0)/4.0
+    # Gauss points on local element
+    xzeta = nodes[:,0] @ Nzeta
+    yzeta = nodes[:,1] @ Nzeta
+    # Calculate the distance from el center to transformed integration points
+    r = ((x_coord - xzeta)**2 + (y_coord - yzeta)**2 + z_coord**2)**0.5
+    # Calculate green function
+    g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+    #print(g.shape)
+    ival = np.dot(Nweights, g) #g @ Nweights
+    return ival, xzeta, yzeta
+
+def gaussint_dbquad_sq(r_coord, nodes, k0, beta = 1+1j):
+    from scipy import integrate
+    gfun_r = lambda x0, y0: np.real(-1j * k0 * beta * (np.exp(-1j*k0*np.sqrt(
+        (r_coord[0]-x0)**2+(r_coord[1]-y0)**2+r_coord[2]**2))/\
+        (4*np.pi*np.sqrt((r_coord[0]-x0)**2+(r_coord[1]-y0)**2+r_coord[2]**2))))
+    Ir = integrate.dblquad(gfun_r, nodes[:,0][0], nodes[:,0][1], nodes[:,1][0], nodes[:,1][3])
+    
+    gfun_i = lambda x0, y0: np.imag(-1j * k0 * beta * (np.exp(-1j*k0*np.sqrt(
+        (r_coord[0]-x0)**2+(r_coord[1]-y0)**2+r_coord[2]**2))/\
+        (4*np.pi*np.sqrt((r_coord[0]-x0)**2+(r_coord[1]-y0)**2+r_coord[2]**2))))
+    Ii = integrate.dblquad(gfun_i, nodes[:,0][0], nodes[:,0][1], nodes[:,1][0], nodes[:,1][3])
+    return Ir[0] + 1j*Ii[0]
+
 def zeta_weights():
-    """ Calculates Nzeta and Nweights
+    """ Calculates Nzeta and Nweights - old implementation 36 gauss pts
     """
     zeta = np.array([-0.93246951, -0.66120939, -0.23861918,
     0.23861918, 0.66120939, 0.93246951])
@@ -844,55 +980,3 @@ def zeta_weights():
     Nweigths = np.reshape(Nweigths, (1,zeta.size**2))
     # print('I have calculated!')
     return Nzeta, Nweigths
-
-#@njit()
-def bemflush_mtx(el_center, node_x, node_y, Nzeta, Nweights, k0, beta):
-    Nel = el_center.shape[0]
-    jacobian = ((el_center[1,0] - el_center[0,0])**2.0)/4.0 #Fix 5.26 p113
-    # initialize
-    bem_mtx = np.zeros((Nel, Nel), dtype = np.complex64)
-    for i in np.arange(Nel):
-        xy_center = el_center[i,:]
-        x_center = xy_center[0] * np.ones(Nzeta.shape[1])
-        y_center = xy_center[1] * np.ones(Nzeta.shape[1])
-        for j in np.arange(i, Nel):
-            xnode = node_x[j,:]
-            ynode = node_y[j,:]
-            xzeta = xnode @ Nzeta # Fix
-            yzeta = ynode @ Nzeta
-            # calculate the distance from el center to transformed integration points
-            r = ((x_center - xzeta)**2 + (y_center - yzeta)**2)**0.5
-            g = 1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
-            #print(g.astype(np.complex64).dtype)
-            bem_mtx[i,j] = g @ Nweights
-    for i in np.arange(Nel-1):
-        for j in np.arange(i+1, Nel):
-            bem_mtx[j,i] = bem_mtx[i,j] 
-    return bem_mtx
-
-def bemflush_pscat(r_coord, node_x, node_y, Nzeta, Nweights, k0, beta, ps):
-    # Vector of receiver coordinates (for vectorized integration)
-    x_coord = r_coord[0] * np.ones(Nzeta.shape[1])
-    y_coord = r_coord[1] * np.ones(Nzeta.shape[1])
-    z_coord = r_coord[2] * np.ones(Nzeta.shape[1])
-    
-    # Number of elements and jacobian
-    Nel = node_x.shape[0]
-    jacobian = ((node_x[1,0] - node_x[0,0])**2.0)/4.0;
-    # Initialization
-    gfield = np.zeros(Nel, dtype = np.complex64)
-    #Loop through elements once
-    for j in np.arange(Nel):
-        # Transform the coordinate system for integration between -1,1 and +1,+1
-        xnode = node_x[j,:]
-        ynode = node_y[j,:]
-        xzeta = xnode @ Nzeta
-        yzeta = ynode @ Nzeta
-        # Calculate the distance from el center to transformed integration points
-        r = ((x_coord - xzeta)**2 + (y_coord - yzeta)**2 + z_coord**2)**0.5
-        # Calculate green function
-        g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
-        # Integrate
-        gfield[j] = g @ Nweights;
-    p_scat = gfield @ ps
-    return p_scat

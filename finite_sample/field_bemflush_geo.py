@@ -185,7 +185,7 @@ class BEMFlushGeo(object):
         self.elem_center = np.zeros((self.elem_surf.shape[0], 3))
         for jel, tri in enumerate(self.elem_surf):
             vertices = self.nodes[self.elem_surf[jel,:],:]
-            self.elem_area[jel] = triangle_area(vertices)
+            self.elem_area[jel] = triangle_area(vertices)/2
             self.elem_center[jel,:] = triangle_centroid(vertices)
 
     def rectangle_s(self, Lx = 1.0, Ly = 1.0):
@@ -270,7 +270,7 @@ class BEMFlushGeo(object):
             bar.update(1)
         bar.close()
         tend = time.time()
-        print("elapsed time: {}".format(tend-tinit))
+        #print("elapsed time: {}".format(tend-tinit))
 
     def p_fps(self,):
         """ Calculates the total sound pressure spectrum at the receivers coordinates.
@@ -412,16 +412,33 @@ def triangle_centroid(vertices):
 def zeta_weights_tri():
     """ Calculates Nzeta and Nweights matrices for a triangle
     """
-    zeta = np.array([-0.93246951, -0.66120939, -0.23861918,
-    0.23861918, 0.66120939, 0.93246951])
+    # FixMe
+# =============================================================================
+#     zeta = np.array([-0.93246951, -0.66120939, -0.23861918,
+#     0.23861918, 0.66120939, 0.93246951])
+# 
+#     weigths = np.array([0.17132449, 0.36076157, 0.46791393,
+#         0.46791393, 0.36076157, 0.17132449])
+# =============================================================================
 
-    weigths = np.array([0.17132449, 0.36076157, 0.46791393,
-        0.46791393, 0.36076157, 0.17132449])
+    # Paulo's - Check square weights and zetas
+    a=1/3 
+    b=(6+np.sqrt(15))/21
+    c=(4/7)-b
+    d=1-2*b
+    e=1-2*c
+    pointsx = np.array([a, b, d, b, c, e, c])
+    pointsy = np.array([a, b, b, d, c, c, e])
+    weigths = np.array([9/80, (155+np.sqrt(15))/2400, (155+np.sqrt(15))/2400, 
+               (155+np.sqrt(15))/2400, (155-np.sqrt(15))/2400, 
+               (155-np.sqrt(15))/2400, (155-np.sqrt(15))/2400]) * 2
+
+
 
     # Create vectors of size 1 x 36 for the zetas
-    N1 = np.matmul(np.reshape(zeta, (zeta.size,1)),  np.reshape(zeta, (1,zeta.size)))
-    N2 = np.matmul(np.reshape(zeta, (zeta.size,1)),  np.reshape(zeta, (1,zeta.size)))
-    N3 = np.matmul(np.reshape(1-zeta-zeta, (zeta.size,1)),  np.reshape(1-zeta-zeta, (1,zeta.size)))
+    N1 = np.matmul(np.reshape(pointsx, (pointsx.size,1)),  np.reshape(pointsx, (1,pointsx.size)))
+    N2 = np.matmul(np.reshape(pointsy, (pointsx.size,1)),  np.reshape(pointsy, (1,pointsx.size)))
+    N3 = np.matmul(np.reshape(1-pointsx-pointsy, (pointsx.size,1)),  np.reshape(1-pointsx-pointsy, (1,pointsx.size)))
 
 # =============================================================================
 #     N1 = (1-zeta).T @  (1-zeta) - (col @ row)
@@ -431,13 +448,13 @@ def zeta_weights_tri():
 #     N4 = 0.25 * np.matmul(np.reshape(1-zeta, (zeta.size,1)),  np.reshape(1+zeta, (1,zeta.size)))
 # =============================================================================
     # Flattens
-    N1 = np.reshape(N1, (1,zeta.size**2))
-    N2 = np.reshape(N2, (1,zeta.size**2))
-    N3 = np.reshape(N3, (1,zeta.size**2))
+    N1 = np.reshape(N1, (1,pointsx.size**2))
+    N2 = np.reshape(N2, (1,pointsx.size**2))
+    N3 = np.reshape(N3, (1,pointsx.size**2))
     #N4 = np.reshape(N4, (1,zeta.size**2))
 
     # Let each line of the following matrix be a N vector
-    Nzeta = np.zeros((3, zeta.size**2))
+    Nzeta = np.zeros((3, pointsx.size**2))
     Nzeta[0,:] = N1
     Nzeta[1,:] = N2
     Nzeta[2,:] = N3
@@ -445,9 +462,9 @@ def zeta_weights_tri():
 
     # Create vector of size 1 x 36 for the weights
     # Nweights = (w).T @  (w) - (col @ row)
-    Nweigths = np.matmul(np.reshape(weigths, (zeta.size,1)),  np.reshape(weigths, (1,zeta.size)))
+    Nweigths = np.matmul(np.reshape(weigths, (pointsx.size,1)),  np.reshape(weigths, (1,pointsx.size)))
     # Flattens
-    Nweigths = np.reshape(Nweigths, (1,zeta.size**2))
+    Nweigths = np.reshape(Nweigths, (1,pointsx.size**2))
     # print('I have calculated!')
     return Nzeta, Nweigths
 
@@ -484,7 +501,7 @@ def bemflush_mtx_tri(el_centerxy, nodesxy, elem_surf, areas ,
     # initialize
     bem_mtx = np.zeros((Nel, Nel), dtype = np.complex64)
     for i in np.arange(Nel):
-        #jacobian = areas[i]/2
+        jacobian = areas[i]
         xy_center = el_centerxy[i,:]
         x_center = xy_center[0] * np.ones(Nzeta.shape[1])
         y_center = xy_center[1] * np.ones(Nzeta.shape[1])
@@ -495,7 +512,7 @@ def bemflush_mtx_tri(el_centerxy, nodesxy, elem_surf, areas ,
         for j in np.arange(Nel):
             xnode = nodesxy[elem_surf[j]][:,0]
             ynode = nodesxy[elem_surf[j]][:,1]
-            jacobian = areas[j]/2
+            #jacobian = areas[j]
 # =============================================================================
 #             jacobian = (xnode[1]-xnode[0])*(ynode[2]-ynode[0])-\
 #                 (xnode[2]-xnode[0])*(ynode[1]-ynode[0])
@@ -550,7 +567,7 @@ def bemflush_pscat_tri(r_coord, nodesxy, elem_surf, areas,
     gfield = np.zeros(Nel, dtype = np.complex64)
     #Loop through elements once
     for j in np.arange(Nel):
-        jacobian = areas[j]/2
+        jacobian = areas[j]
         # Transform the coordinate system for integration between -1,1 and +1,+1
         xnode = nodesxy[elem_surf[j]][:,0]
         ynode = nodesxy[elem_surf[j]][:,1]
