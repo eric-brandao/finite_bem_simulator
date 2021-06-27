@@ -113,7 +113,8 @@ class BEMFlushGeo(object):
     
     def __init__(self, air = [], controls = [], material = [],
                  sources = [], receivers = [],  
-                 min_max_el_size = [0.05, 0.1], Nel_per_wavelenth = []):
+                 min_max_el_size = [0.05, 0.1], Nel_per_wavelenth = [],
+                 n_gauss = 6):
         """
 
         Parameters
@@ -143,6 +144,7 @@ class BEMFlushGeo(object):
         self.receivers = receivers
         self.min_max_el_size = min_max_el_size
         self.Nel_per_wavelenth = Nel_per_wavelenth
+        self.n_gauss = n_gauss
         #self.rectangle = []
         try:
             self.beta = (self.air.rho0 * self.air.c0) / self.material.Zs  # normalized surface admitance
@@ -152,7 +154,7 @@ class BEMFlushGeo(object):
         self.ux_s = []
         self.uy_s = []
         self.uz_s = []
-        self.Nzeta, self.Nweights = zeta_weights_tri()
+        #self.Nzeta, self.Nweights = zeta_weights_tri()
     
     def get_min_max_elsize(self):
         """ Gets the minimum and maximum element size
@@ -185,7 +187,7 @@ class BEMFlushGeo(object):
         self.elem_center = np.zeros((self.elem_surf.shape[0], 3))
         for jel, tri in enumerate(self.elem_surf):
             vertices = self.nodes[self.elem_surf[jel,:],:]
-            self.elem_area[jel] = triangle_area(vertices)/2
+            self.elem_area[jel] = triangle_area(vertices)
             self.elem_center[jel,:] = triangle_centroid(vertices)
 
     def rectangle_s(self, Lx = 1.0, Ly = 1.0):
@@ -240,6 +242,8 @@ class BEMFlushGeo(object):
         On the other hand, if you want to simulate with a different source(s) configuration
         you will have to re-compute the BEM simulation.
         """
+        # Get shape functions and weights
+        Nksi, Nweights = ksi_weights_tri_mtx(n_gauss = self.n_gauss)
         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
         Nel = self.elem_center.shape[0]
         self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=complex)
@@ -257,8 +261,8 @@ class BEMFlushGeo(object):
             desc = 'Calculating the surface pressure for each frequency step (method 1)')
         for jf, k0 in enumerate(self.controls.k0):
             #Version 1 (distances in loop) - most time spent here
-            gij = bemflush_mtx_tri(self.elem_center[:,0:2], self.nodes[:,0:2], self.elem_surf,
-                self.elem_area, self.Nzeta, self.Nweights.T, k0, self.beta[jf])
+            gij = bemflush_mtx_tri(self.elem_center, self.nodes, self.elem_surf,
+                self.elem_area, Nksi, Nweights, k0, self.beta[jf])
 
             # Calculate the unperturbed pressure
             p_unpt = 2.0 * np.exp(-1j * k0 * r_unpt) / r_unpt
@@ -278,6 +282,8 @@ class BEMFlushGeo(object):
         The sound pressure spectrum is calculatef for all receivers (attribute of class).
         The quantity calculated is the total sound pressure = incident + scattered.
         """
+        # Get shape functions and weights
+        Nksi, Nweights = ksi_weights_tri_mtx(n_gauss = self.n_gauss)
         # Loop the receivers
         self.pres_s = []
         for js, s_coord in enumerate(self.sources.coord):
@@ -294,9 +300,9 @@ class BEMFlushGeo(object):
                 bar = tqdm(total = len(self.controls.k0),
                     desc = 'Processing sound pressure at field point')
                 for jf, k0 in enumerate(self.controls.k0):
-                    p_scat = bemflush_pscat_tri(r_coord, self.nodes[:,0:2], 
-                        self.elem_surf, self.elem_area, self.Nzeta, 
-                        self.Nweights.T, k0, self.beta[jf], self.p_surface[:,jf])
+                    p_scat = bemflush_pscat_tri(r_coord, self.nodes, 
+                        self.elem_surf, self.elem_area, Nksi, 
+                        Nweights, k0, self.beta[jf], self.p_surface[:,jf])
                     pres_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) +\
                         (np.exp(-1j * k0 * r2) / r2) + p_scat
                     bar.update(1)
@@ -369,7 +375,7 @@ class BEMFlushGeo(object):
         fig.show()
         
 def triangle_area(vertices):
-    """ Calculates the area of a triangle
+    """Calculate the area of a triangle.
     
     Parameters
     ----------
@@ -377,7 +383,7 @@ def triangle_area(vertices):
         A (3,) numpy array with the vertices of the triangle
     
     Returns
-    ---------
+    -------
     area_tri : float
         the area of the triangle
     """
@@ -408,68 +414,81 @@ def triangle_centroid(vertices):
     """
     return (vertices[0] + vertices[1] + vertices[2])/3        
 
-
-def zeta_weights_tri():
-    """ Calculates Nzeta and Nweights matrices for a triangle
+def ksi_weights_tri_mtx(n_gauss = 6):
+    """ Calculates Nksi and Nweights matrices
+    
+    This function calculates Nksi and Nweights matrices to be used in Gaussian
+    quadrature matrix integration of triangular elements. It will return the 
+    shape functions as a matrix of 3 x n_gauss elements and a vector of weights
+    of n_gauss elements. Only certain number of gauss points are allowed: 
+    3, 6 - this approach avoids singularity in the case of collocation
+    point located at the center of the element being integrated.
+    
+    
+    Parameters
+    ----------
+    n_gauss : int
+        the number of gauss points desired. Can be 4, 16 and 36. If another
+        number is choosen, 36 points are automatically selected
+        
+    Returns
+    ----------
+    Nksi : numpy ndArray
+        shape functions as a matrix of 4 x n_gauss elements
+    Nweights : numpy 1dArray
+        vector of weights of n_gauss elements
     """
-    # FixMe
-# =============================================================================
-#     zeta = np.array([-0.93246951, -0.66120939, -0.23861918,
-#     0.23861918, 0.66120939, 0.93246951])
-# 
-#     weigths = np.array([0.17132449, 0.36076157, 0.46791393,
-#         0.46791393, 0.36076157, 0.17132449])
-# =============================================================================
+    # Initialize
+    Nksi = np.zeros((3, n_gauss))
+    Nweights = np.zeros(n_gauss)
+    
+    # Write ksi1, ksi2 and weights
+    if n_gauss == 3:
+        a = 1/6
+        b = 2/3
+        ksi1 = np.array([a, a, b])
+        ksi2 = np.array([a, b, a])
+        Nweights += 1/6 
+    else:
+        a = 0.445948490915965
+        b = 0.091576213509771
+        c = 1-2*a
+        d = 1-2*b
+        ksi1 = np.array([a, c, a, b, d, b])
+        ksi2 = np.array([a, a, c, b, b, d])
+        Nweights[0:3] = 0.111690794839005
+        Nweights[3:6] =  0.054975871827661
+         
+    # write shape functions
+    Nksi[0,:] = ksi1
+    Nksi[1,:] = ksi2
+    Nksi[2,:] = 1-ksi1-ksi2
+    
+    return Nksi, Nweights
 
-    # Paulo's - Check square weights and zetas
-    a=1/3 
-    b=(6+np.sqrt(15))/21
-    c=(4/7)-b
-    d=1-2*b
-    e=1-2*c
-    pointsx = np.array([a, b, d, b, c, e, c])
-    pointsy = np.array([a, b, b, d, c, c, e])
-    weigths = np.array([9/80, (155+np.sqrt(15))/2400, (155+np.sqrt(15))/2400, 
-               (155+np.sqrt(15))/2400, (155-np.sqrt(15))/2400, 
-               (155-np.sqrt(15))/2400, (155-np.sqrt(15))/2400]) * 2
+
+def gaussint_tri(r_coord, nodes, Nksi, Nweights, k0, beta = 1+0*1j):
+    # Vector of receiver coordinates (for vectorized integration)
+    x_coord = r_coord[0] * np.ones(Nksi.shape[1])
+    y_coord = r_coord[1] * np.ones(Nksi.shape[1])
+    z_coord = r_coord[2] * np.ones(Nksi.shape[1])
+    # Jacobian of squared element
+    jacobian = triangle_area(nodes)*2
+    #jacobian = ((nodes[:,0][1] - nodes[:,0][0])**2.0)/4.0
+    # Gauss points on local element
+    xksi = nodes[:,0] @ Nksi
+    yksi = nodes[:,1] @ Nksi
+    # Calculate the distance from el center to transformed integration points
+    r = ((x_coord - xksi)**2 + (y_coord - yksi)**2 + z_coord**2)**0.5
+    # Calculate green function
+    g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+    #print(g.shape)
+    ival = np.dot(Nweights, g) #g @ Nweights
+    return ival, xksi, yksi
 
 
-
-    # Create vectors of size 1 x 36 for the zetas
-    N1 = np.matmul(np.reshape(pointsx, (pointsx.size,1)),  np.reshape(pointsx, (1,pointsx.size)))
-    N2 = np.matmul(np.reshape(pointsy, (pointsx.size,1)),  np.reshape(pointsy, (1,pointsx.size)))
-    N3 = np.matmul(np.reshape(1-pointsx-pointsy, (pointsx.size,1)),  np.reshape(1-pointsx-pointsy, (1,pointsx.size)))
-
-# =============================================================================
-#     N1 = (1-zeta).T @  (1-zeta) - (col @ row)
-#     N1 = 0.25 * np.matmul(np.reshape(1-zeta, (zeta.size,1)),  np.reshape(1-zeta, (1,zeta.size)))
-#     N2 = 0.25 * np.matmul(np.reshape(1+zeta, (zeta.size,1)),  np.reshape(1-zeta, (1,zeta.size)))
-#     N3 = 0.25 * np.matmul(np.reshape(1+zeta, (zeta.size,1)),  np.reshape(1+zeta, (1,zeta.size)))
-#     N4 = 0.25 * np.matmul(np.reshape(1-zeta, (zeta.size,1)),  np.reshape(1+zeta, (1,zeta.size)))
-# =============================================================================
-    # Flattens
-    N1 = np.reshape(N1, (1,pointsx.size**2))
-    N2 = np.reshape(N2, (1,pointsx.size**2))
-    N3 = np.reshape(N3, (1,pointsx.size**2))
-    #N4 = np.reshape(N4, (1,zeta.size**2))
-
-    # Let each line of the following matrix be a N vector
-    Nzeta = np.zeros((3, pointsx.size**2))
-    Nzeta[0,:] = N1
-    Nzeta[1,:] = N2
-    Nzeta[2,:] = N3
-    #Nzeta[3,:] = N4
-
-    # Create vector of size 1 x 36 for the weights
-    # Nweights = (w).T @  (w) - (col @ row)
-    Nweigths = np.matmul(np.reshape(weigths, (pointsx.size,1)),  np.reshape(weigths, (1,pointsx.size)))
-    # Flattens
-    Nweigths = np.reshape(Nweigths, (1,pointsx.size**2))
-    # print('I have calculated!')
-    return Nzeta, Nweigths
-
-def bemflush_mtx_tri(el_centerxy, nodesxy, elem_surf, areas ,
-                     Nzeta, Nweights, k0, beta):
+def bemflush_mtx_tri(el_center, nodes, elem_surf, areas,
+                     Nksi, Nweights, k0, beta):
     """ Creates the BEM matrix
     
     Parameters
@@ -496,38 +515,43 @@ def bemflush_mtx_tri(el_centerxy, nodesxy, elem_surf, areas ,
     bem_mtx : numpy ndarray (nel x nel)
         bem matrix (complex)
     """
-    Nel = el_centerxy.shape[0]
-    #jacobian = ((el_center[1,0] - el_center[0,0])**2.0)/4.0 #Fix 5.26 p113
+    # Number of elements
+    Nel = el_center.shape[0]
     # initialize
     bem_mtx = np.zeros((Nel, Nel), dtype = np.complex64)
     for i in np.arange(Nel):
-        jacobian = areas[i]
-        xy_center = el_centerxy[i,:]
-        x_center = xy_center[0] * np.ones(Nzeta.shape[1])
-        y_center = xy_center[1] * np.ones(Nzeta.shape[1])
-# =============================================================================
-#         jacobian = (x_center[1]-x_center[0])*(y_center[2]-y_center[0])-\
-#             (x_center[2]-x_center[0])*(y_center[1]-y_center[0])
-# =============================================================================
+        # colocation point
+        r_colocation = el_center[i,:]
         for j in np.arange(Nel):
-            xnode = nodesxy[elem_surf[j]][:,0]
-            ynode = nodesxy[elem_surf[j]][:,1]
-            #jacobian = areas[j]
-# =============================================================================
-#             jacobian = (xnode[1]-xnode[0])*(ynode[2]-ynode[0])-\
-#                 (xnode[2]-xnode[0])*(ynode[1]-ynode[0])
-# =============================================================================
-            xzeta = xnode @ Nzeta # Fix
-            yzeta = ynode @ Nzeta
-            # calculate the distance from el center to transformed integration points
-            r = ((x_center - xzeta)**2 + (y_center - yzeta)**2)**0.5
-            g = 1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
-            #print(g.astype(np.complex64).dtype)
-            bem_mtx[i,j] = g @ Nweights
+            # Get nodes of element
+            nodes_of_el = nodes[elem_surf[j]]
+            # Integrate
+            bem_mtx[i,j], _, _ = gaussint_tri(r_colocation, nodes_of_el, 
+                                              Nksi, Nweights, k0, beta = beta)
     return bem_mtx
+# =============================================================================
+#     for i in np.arange(Nel):
+#         jacobian = areas[i]
+#         xy_center = el_centerxy[i,:]
+#         x_center = xy_center[0] * np.ones(Nzeta.shape[1])
+#         y_center = xy_center[1] * np.ones(Nzeta.shape[1])
+# 
+#         for j in np.arange(Nel):
+#             xnode = nodesxy[elem_surf[j]][:,0]
+#             ynode = nodesxy[elem_surf[j]][:,1]
+# 
+#             xzeta = xnode @ Nzeta # Fix
+#             yzeta = ynode @ Nzeta
+#             # calculate the distance from el center to transformed integration points
+#             r = ((x_center - xzeta)**2 + (y_center - yzeta)**2)**0.5
+#             g = 1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+#             #print(g.astype(np.complex64).dtype)
+#             bem_mtx[i,j] = g @ Nweights
+#     return bem_mtx
+# =============================================================================
 
-def bemflush_pscat_tri(r_coord, nodesxy, elem_surf, areas, 
-                   Nzeta, Nweights, k0, beta, ps):
+def bemflush_pscat_tri(r_coord, nodes, elem_surf, areas, 
+                   Nksi, Nweights, k0, beta, ps):
     """ Calculates the pressure at a receiver
     
     Parameters
@@ -556,32 +580,46 @@ def bemflush_pscat_tri(r_coord, nodesxy, elem_surf, areas,
     p_scat : float
         scattered sound pressure (complex)
     """
-    # Vector of receiver coordinates (for vectorized integration)
-    x_coord = r_coord[0] * np.ones(Nzeta.shape[1])
-    y_coord = r_coord[1] * np.ones(Nzeta.shape[1])
-    z_coord = r_coord[2] * np.ones(Nzeta.shape[1])
-    
     # Number of elements and jacobian
     Nel = elem_surf.shape[0]
     # Initialization
     gfield = np.zeros(Nel, dtype = np.complex64)
     #Loop through elements once
     for j in np.arange(Nel):
-        jacobian = areas[j]
-        # Transform the coordinate system for integration between -1,1 and +1,+1
-        xnode = nodesxy[elem_surf[j]][:,0]
-        ynode = nodesxy[elem_surf[j]][:,1]
-# =============================================================================
-#         jacobian = (xnode[1]-xnode[0])*(ynode[2]-ynode[0])-\
-#             (xnode[2]-xnode[0])*(ynode[1]-ynode[0])
-# =============================================================================
-        xzeta = xnode @ Nzeta
-        yzeta = ynode @ Nzeta
-        # Calculate the distance from el center to transformed integration points
-        r = ((x_coord - xzeta)**2 + (y_coord - yzeta)**2 + z_coord**2)**0.5
-        # Calculate green function
-        g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+        # Get nodes of element
+        nodes_of_el = nodes[elem_surf[j]]
         # Integrate
-        gfield[j] = g @ Nweights;
-    p_scat = gfield @ ps
+        gfield[j], _, _ = gaussint_tri(r_coord, nodes_of_el, 
+                                          Nksi, Nweights, k0, beta = beta)
+    # Scattered pressure    
+    p_scat = np.dot(gfield, ps)
     return p_scat
+
+# =============================================================================
+#     # Vector of receiver coordinates (for vectorized integration)
+#     x_coord = r_coord[0] * np.ones(Nzeta.shape[1])
+#     y_coord = r_coord[1] * np.ones(Nzeta.shape[1])
+#     z_coord = r_coord[2] * np.ones(Nzeta.shape[1])
+#     
+#     # Number of elements and jacobian
+#     Nel = elem_surf.shape[0]
+#     # Initialization
+#     gfield = np.zeros(Nel, dtype = np.complex64)
+#     #Loop through elements once
+#     for j in np.arange(Nel):
+#         jacobian = areas[j]
+#         # Transform the coordinate system for integration between -1,1 and +1,+1
+#         xnode = nodesxy[elem_surf[j]][:,0]
+#         ynode = nodesxy[elem_surf[j]][:,1]
+# 
+#         xzeta = xnode @ Nzeta
+#         yzeta = ynode @ Nzeta
+#         # Calculate the distance from el center to transformed integration points
+#         r = ((x_coord - xzeta)**2 + (y_coord - yzeta)**2 + z_coord**2)**0.5
+#         # Calculate green function
+#         g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+#         # Integrate
+#         gfield[j] = g @ Nweights;
+#     p_scat = gfield @ ps
+#     return p_scat
+# =============================================================================

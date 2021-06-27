@@ -71,11 +71,11 @@ class BEMFlushSq(object):
     def psurf()
         Calculates the surface pressure of the BEM mesh
 
-    assemble_gij() -dis
+    assemble_gij()
         Assemble the BEM matrix.
 
-    psurf2() - dis
-        Calculates p_surface using assembled gij_f matrixes.
+    psurf2()
+        Calculate p_surface using assembled gij_f matrixes.
 
     p_fps()
         Calculates the total sound pressure spectrum at the receivers coordinates.
@@ -146,7 +146,7 @@ class BEMFlushSq(object):
         # print("pause")
 
     def generate_mesh(self, Lx = 1.0, Ly = 1.0, el_size = 0.05, Nel_per_wavelenth = []):
-        """ Generate the mesh for simulation
+        """Generate the mesh for simulation.
 
         The mesh will consists of rectangular elements. Their size is a function
         of the sample's size (Lx and Ly) and the maximum frequency intended and
@@ -193,9 +193,27 @@ class BEMFlushSq(object):
                 self.node_x[d,:]=[xje[n], xje[n]+el_size, xje[n]+el_size, xje[n]]
                 self.node_y[d,:]=[yje[m], yje[m], yje[m]+el_size, yje[m]+el_size]
                 d += 1
+    
+    def parse_mesh(self, bemf_field_obj):
+        """Parse mesh from field object.
+        
+        Parameters
+        ----------
+        bemf_field_obj : object
+            BEM flush field object.
+        """
+        # sample size
+        self.Lx = bemf_field_obj.Lx
+        self.Ly = bemf_field_obj.Ly
+        # element center and jacobian
+        self.el_center = bemf_field_obj.el_center
+        self.jacobian = bemf_field_obj.jacobian
+        # A Nel_x * Nel_y by 4 matrix containing the x and y coords of element x and y corners
+        self.node_x = bemf_field_obj.node_x
+        self.node_y = bemf_field_obj.node_y
 
     def psurf(self,):
-        """ Calculates the surface pressure of the BEM mesh.
+        """Calculate the surface pressure of the BEM mesh.
 
         Uses the Python implemented module.
         The surface pressure calculation represents the first step in a BEM simulation.
@@ -223,7 +241,7 @@ class BEMFlushSq(object):
         r_unpt = np.linalg.norm(rsel, axis = 1)
         tinit = time.time()
         bar = tqdm(total = len(self.controls.k0),
-            desc = 'Calculating the surface pressure for each frequency step (method 1)')
+            desc = 'Surface pressure for each frequency (method 1).Size is {} x {} m'.format(self.Lx, self.Ly))
         for jf, k0 in enumerate(self.controls.k0):
             #Version 1 (distances in loop) - most time spent here
             gij = bemflush_mtx(self.el_center, self.node_x, self.node_y,
@@ -238,83 +256,82 @@ class BEMFlushSq(object):
         tend = time.time()
         #print("elapsed time: {}".format(tend-tinit))
 
-# =============================================================================
-#     def assemble_gij(self,):
-#         """ Assemble the BEM matrix.
-# 
-#         Uses C++ implemented module.
-#         Assembles a Nel x Nel matrix of complex numbers for each frequency step.
-#         It is memory consuming. On the other hand, it is independent of the sound sources.
-#         If you store this matrix, you can change the positions of sound sources
-#         and use the information in memory to calculate the p_surface attribute.
-#         This can save time in simulations where you vary such parametes. The calculation of
-#         surface pressure (based on the incident sound pressure) should be done later.
-#         """
-#         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
-#         el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
-#         el_3Dcoord[:,0:2] = self.el_center
-#         # Set a time count for performance check
-#         tinit = time.time()
-#         # bar = ChargingBar('Assembling BEM matrix for each frequency step',
-#         #     max=len(self.controls.k0), suffix='%(percent)d%%')
-#         bar = tqdm(total = len(self.controls.k0),
-#             desc = 'Assembling BEM matrix for each frequency step')
-#         self.gij_f = []
-#         # print(dir(insitu_cpp))
-#         for jf, k0 in enumerate(self.controls.k0):
-#             gij = bemflush_mtx(self.el_center, self.node_x, self.node_y,
-#             self.Nzeta, self.Nweights.T, k0, self.beta[jf])
-#             self.gij_f.append(gij)
-#             bar.update(1)
-#         bar.close()
-#         #     bar.next()
-#         # bar.finish()
-#         tend = time.time()
-#         #print("elapsed time: {}".format(tend-tinit))
-# 
-#     def psurf2(self,):
-#         """ Calculates p_surface using assembled gij_f matrixes.
-# 
-#         Uses C++ implemented module.
-#         The surface pressure calculation represents the first step in a BEM simulation.
-#         It will use assembled BEM matrix (from assemble_gij) and solve for
-#         the surface pressure based on the incident sound pressure. Each column is
-#         a complex surface pressure for each element in the mesh. Each row represents
-#         the evolution of frequency for a single element in the mesh.
-#         Therefore, there are N vs len(self.controls.freq) entries in this matrix.
-#         This method saves processing time, compared to the use of psurf. You need to run it
-#         if you change sound source(s) configuration (no need to run assemble_gij again)..
-#         """
-#         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
-#         Nel = len(self.el_center)
-#         self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=np.csingle)
-#         # Generate the C matrix
-#         c_mtx = 0.5 * np.identity(len(self.el_center), dtype = np.float32)
-#         # Calculate the distance from source to each element center
-#         el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
-#         el_3Dcoord[:,0:2] = self.el_center
-#         rsel = np.repeat(np.reshape(self.sources.coord[0,:],(1,3)),len(self.el_center),axis=0)-\
-#             el_3Dcoord
-#         r_unpt = np.linalg.norm(rsel, axis = 1)
-#         tinit = time.time()
-#         # bar = ChargingBar('Calculating the surface pressure for each frequency step (method 2)',
-#         #     max=len(self.controls.k0), suffix='%(percent)d%%')
-#         bar = tqdm(total = len(self.controls.k0),
-#             desc = 'Calculating the surface pressure for each frequency step (method 2)')
-#         for jf, k0 in enumerate(self.controls.k0):
-#             gij = self.gij_f[jf]
-#             # Calculate the unperturbed pressure
-#             p_unpt = 2.0 * np.exp(-1j * k0 * r_unpt) / r_unpt
-#             # Solve system of equations
-#             # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))
-#             self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
-#             bar.update(1)
-#         bar.close()
-#         #     bar.next()
-#         # bar.finish()
-#         tend = time.time()
-#         print("elapsed time: {}".format(tend-tinit))
-# =============================================================================
+    def assemble_gij(self,):
+        """Assemble the BEM matrix.
+
+        Uses implemented python module.
+        Assembles a Nel x Nel matrix of complex numbers for each frequency step.
+        It is memory consuming. On the other hand, it is independent of the 
+        material properties and the sound sources. If you store this matrix,
+        you can change the material and the positions of sound sources. Then,
+        the information in memory is used to calculate the p_surface attribute.
+        This can save time in simulations where you vary such parametes. The calculation of
+        surface pressure (based on the incident sound pressure) should be done later.
+        """
+        # Get shape functions and weights
+        Nksi, Nweights = ksi_weights_mtx(n_gauss = self.n_gauss)
+        # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
+        el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
+        el_3Dcoord[:,0:2] = self.el_center
+        # Set a time count for performance check
+        tinit = time.time()
+        bar = tqdm(total = len(self.controls.k0),
+            desc = 'Assembling BEM matrix for each frequency. Size is {} x {} m'.format(self.Lx, self.Ly))
+        self.gij_f = []
+        for jf, k0 in enumerate(self.controls.k0):
+            gij = bemflush_mtx(self.el_center, self.node_x, self.node_y,
+            Nksi, Nweights.T, k0, 1.0)
+            self.gij_f.append(gij)
+            bar.update(1)
+        bar.close()
+        tend = time.time()
+        #print("elapsed time: {}".format(tend-tinit))
+
+    def psurf2(self, erase_gij = False):
+        """Calculate p_surface using assembled gij_f matrixes.
+
+        Uses the implemented python module.
+        The surface pressure calculation represents the first step in a BEM simulation.
+        It will use the assembled BEM matrix (from assemble_gij) and solve for
+        the surface pressure based on the incident sound pressure and material
+        properties. Each column is a complex surface pressure for each element 
+        in the mesh. Each row represents the evolution of frequency for a 
+        single element in the mesh. Therefore, there are N vs len(self.controls.freq)
+        entries in this matrix. This method saves processing time, compared to
+        the use of psurf. You need to run it if you change the material properties 
+        and/or the sound source configuration (no need to run assemble_gij again).
+        
+        Parameters
+        ----------
+        erase_gij : bool
+            Wheter to erase gij matrix or not. Erasing saves memory.
+        """
+        # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
+        Nel = len(self.el_center)
+        self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=np.csingle)
+        # Generate the C matrix
+        c_mtx = 0.5 * np.identity(len(self.el_center), dtype = np.float32)
+        # Calculate the distance from source to each element center
+        el_3Dcoord = np.zeros((len(self.el_center), 3), dtype=np.float32)
+        el_3Dcoord[:,0:2] = self.el_center
+        rsel = np.repeat(np.reshape(self.sources.coord[0,:],(1,3)),len(self.el_center),axis=0)-\
+            el_3Dcoord
+        r_unpt = np.linalg.norm(rsel, axis = 1)
+        tinit = time.time()
+        bar = tqdm(total = len(self.controls.k0),
+            desc = 'Surface pressure for each frequency (method 2).Size is {} x {} m'.format(self.Lx, self.Ly))
+        for jf, k0 in enumerate(self.controls.k0):
+            gij = self.beta[jf]*self.gij_f[jf]
+            # Calculate the unperturbed pressure
+            p_unpt = 2.0 * np.exp(-1j * k0 * r_unpt) / r_unpt
+            # Solve system of equations
+            self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
+            bar.update(1)
+        bar.close()
+        tend = time.time()
+        if erase_gij:
+            self.gij_f = []
+        #print("elapsed time: {}".format(tend-tinit))
 
     def p_fps(self,):
         """ Calculates the total sound pressure spectrum at the receivers coordinates.
@@ -709,7 +726,7 @@ class BEMFlushSq(object):
         # plt.xlabel(r'$x$ [m]')
         # plt.ylabel(r'$z$ [m]')
 
-    def save(self, filename = 'my_bemflush', path = '/home/eric/dev/insitu/data/bem_simulations/'):
+    def save(self, filename = 'my_bemflush', path = ''):
         """ To save the simulation object as pickle
 
         Parameters
@@ -725,7 +742,7 @@ class BEMFlushSq(object):
         pickle.dump(self.__dict__, f, 2)
         f.close()
 
-    def load(self, filename = 'my_qterm', path = '/home/eric/dev/insitu/data/bem_simulations/'):
+    def load(self, filename = 'my_qterm', path = ''):
         """ Load a simulation object.
 
         You can instantiate an empty object of the class and load a saved one.
