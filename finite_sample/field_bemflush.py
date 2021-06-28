@@ -357,7 +357,7 @@ class BEMFlushSq(object):
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
                 for jf, k0 in enumerate(self.controls.k0):
-                    p_scat = bemflush_pscat(r_coord, self.node_x, self.node_y,
+                    p_scat = bemflush_pscat2(r_coord, self.node_x, self.node_y,
                         Nksi, Nweights, k0, self.beta[jf], self.p_surface[:,jf])
                     pres_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) +\
                         (np.exp(-1j * k0 * r2) / r2) + p_scat
@@ -875,6 +875,73 @@ def bemflush_mtx(el_center, node_x, node_y, Nksi, Nweights, k0, beta):
             bem_mtx[j,i] = bem_mtx[i,j] 
     return bem_mtx
 
+@njit
+def bemflush_pscat2(r_coord, node_x, node_y, Nksi, Nweights, k0, beta, ps):
+    """ Computes the scattered part of the sound field at a field point
+    
+    For a given field point, computes the scattered part of the sound field.
+    We span all elements' contribution to the receiver. First, we compute the
+    Rayleigh's integral for each element and then combine it with the surface
+    pressure (amplitude of each monopole) to get the scattering contribution.
+    
+    Parameters
+    ----------
+    r_coord : numpy ndArray
+        a (3,) vector containing the coordinates of the receiver
+    node_x : numpy ndArray
+        a (Nel x 4) matrix containing the coordinates of element x vertices
+    node_y : numpy ndArray
+        a (Nel x 4) matrix containing the coordinates of element y vertices
+    Nksi : numpy ndArray
+        shape functions as a matrix of 4 x n_gauss elements
+    Nweights : numpy 1dArray
+        vector of weights of n_gauss elements
+    k0 : float
+        sound wave-number at a frequency
+    beta : float complex
+        boundary condition at a frequency (surface admitance)
+    ps : numpy ndArray
+        (Nel, ) vector containing the surface pressure at each element for
+        a frequency
+    Returns
+    ----------
+    p_scat : float complex
+        scattered pressure at receiver
+    """
+    #Nweights = numba.complex64(Nweights)
+    #g = np.zeros(len(Nweights), dtype = np.complex64)
+    # Vector of receiver coordinates (for vectorized integration)
+    x_coord = r_coord[0] * np.ones(Nksi.shape[1])
+    y_coord = r_coord[1] * np.ones(Nksi.shape[1])
+    z_coord = r_coord[2] * np.ones(Nksi.shape[1])
+    
+    
+    # Number of elements and jacobian
+    Nel = node_x.shape[0]
+    jacobian = ((node_x[1,0] - node_x[0,0])**2.0)/4.0;
+    # Initialization
+    gfield = np.zeros(Nel, dtype = np.complex64) #np.complex64
+    #Loop through elements once
+    for j in np.arange(Nel):
+        # Transform the coordinate system for integration
+        xnode = node_x[j,:]
+        ynode = node_y[j,:]
+        xzeta = np.dot(xnode, Nksi) #xnode @ Nksi
+        yzeta = np.dot(ynode, Nksi) #ynode @ Nksi
+        # Calculate the distance from el center to transformed integration points
+        r = ((x_coord - xzeta)**2 + (y_coord - yzeta)**2 + z_coord**2)**0.5
+        # Calculate green function
+        #g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+        g = -1j *k0 * beta *(np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+        # Integrate
+        #g = numba.complex64(g)
+        gfield[j] = np.sum((Nweights*g)) #g @ Nweights;
+    p_scat = np.sum((gfield*ps)) #np.dot(gfield, ps) #gfield @ ps
+    return p_scat
+
+
+
+#@njit
 def bemflush_pscat(r_coord, node_x, node_y, Nksi, Nweights, k0, beta, ps):
     """ Computes the scattered part of the sound field at a field point
     
@@ -907,11 +974,12 @@ def bemflush_pscat(r_coord, node_x, node_y, Nksi, Nweights, k0, beta, ps):
     p_scat : float complex
         scattered pressure at receiver
     """
-    
+    #g = np.zeros(len(Nweights), dtype = np.complex64)
     # Vector of receiver coordinates (for vectorized integration)
     x_coord = r_coord[0] * np.ones(Nksi.shape[1])
     y_coord = r_coord[1] * np.ones(Nksi.shape[1])
     z_coord = r_coord[2] * np.ones(Nksi.shape[1])
+    
     
     # Number of elements and jacobian
     Nel = node_x.shape[0]
@@ -920,7 +988,7 @@ def bemflush_pscat(r_coord, node_x, node_y, Nksi, Nweights, k0, beta, ps):
     gfield = np.zeros(Nel, dtype = np.complex64) #np.complex64
     #Loop through elements once
     for j in np.arange(Nel):
-        # Transform the coordinate system for integration between -1,1 and +1,+1
+        # Transform the coordinate system for integration
         xnode = node_x[j,:]
         ynode = node_y[j,:]
         xzeta = np.dot(xnode, Nksi) #xnode @ Nksi
@@ -929,6 +997,7 @@ def bemflush_pscat(r_coord, node_x, node_y, Nksi, Nweights, k0, beta, ps):
         r = ((x_coord - xzeta)**2 + (y_coord - yzeta)**2 + z_coord**2)**0.5
         # Calculate green function
         g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
+        #g = k0 * (np.exp(- k0 * r)/(4 * np.pi * r)) * jacobian
         # Integrate
         gfield[j] = np.dot(Nweights, g) #g @ Nweights;
     p_scat = np.dot(gfield, ps) #gfield @ ps
