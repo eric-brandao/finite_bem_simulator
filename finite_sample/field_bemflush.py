@@ -212,7 +212,7 @@ class BEMFlushSq(object):
         self.node_x = bemf_field_obj.node_x
         self.node_y = bemf_field_obj.node_y
 
-    def psurf(self,):
+    def psurf(self, bar_leave = True):
         """Calculate the surface pressure of the BEM mesh.
 
         Uses the Python implemented module.
@@ -240,8 +240,8 @@ class BEMFlushSq(object):
             el_3Dcoord
         r_unpt = np.linalg.norm(rsel, axis = 1)
         tinit = time.time()
-        bar = tqdm(total = len(self.controls.k0),
-            desc = 'Surface pressure for each frequency (method 1).Size is {} x {} m'.format(self.Lx, self.Ly))
+        bar = tqdm(total = len(self.controls.k0), leave = bar_leave,
+            desc = 'Surf. pres. for each frequency (method 1). {} x {} m'.format(self.Lx, self.Ly))
         for jf, k0 in enumerate(self.controls.k0):
             #Version 1 (distances in loop) - most time spent here
             gij = bemflush_mtx(self.el_center, self.node_x, self.node_y,
@@ -256,7 +256,7 @@ class BEMFlushSq(object):
         tend = time.time()
         #print("elapsed time: {}".format(tend-tinit))
 
-    def assemble_gij(self,):
+    def assemble_gij(self, bar_leave = True):
         """Assemble the BEM matrix.
 
         Uses implemented python module.
@@ -275,8 +275,8 @@ class BEMFlushSq(object):
         el_3Dcoord[:,0:2] = self.el_center
         # Set a time count for performance check
         tinit = time.time()
-        bar = tqdm(total = len(self.controls.k0),
-            desc = 'Assembling BEM matrix for each frequency. Size is {} x {} m'.format(self.Lx, self.Ly))
+        bar = tqdm(total = len(self.controls.k0), leave = bar_leave,
+            desc = 'Assembling BEM matrix for each freq. {} x {} m'.format(self.Lx, self.Ly))
         self.gij_f = []
         for jf, k0 in enumerate(self.controls.k0):
             gij = bemflush_mtx(self.el_center, self.node_x, self.node_y,
@@ -287,7 +287,7 @@ class BEMFlushSq(object):
         tend = time.time()
         #print("elapsed time: {}".format(tend-tinit))
 
-    def psurf2(self, erase_gij = False):
+    def psurf2(self, erase_gij = False, bar_leave = True):
         """Calculate p_surface using assembled gij_f matrixes.
 
         Uses the implemented python module.
@@ -318,8 +318,8 @@ class BEMFlushSq(object):
             el_3Dcoord
         r_unpt = np.linalg.norm(rsel, axis = 1)
         tinit = time.time()
-        bar = tqdm(total = len(self.controls.k0),
-            desc = 'Surface pressure for each frequency (method 2).Size is {} x {} m'.format(self.Lx, self.Ly))
+        bar = tqdm(total = len(self.controls.k0), leave = bar_leave,
+            desc = 'Surf. pres. for each frequency (method 2). {} x {} m'.format(self.Lx, self.Ly))
         for jf, k0 in enumerate(self.controls.k0):
             gij = self.beta[jf]*self.gij_f[jf]
             # Calculate the unperturbed pressure
@@ -333,7 +333,7 @@ class BEMFlushSq(object):
             self.gij_f = []
         #print("elapsed time: {}".format(tend-tinit))
 
-    def p_fps(self,):
+    def p_fps(self, bar_leave = True):
         """ Calculates the total sound pressure spectrum at the receivers coordinates.
 
         The sound pressure spectrum is calculatef for all receivers (attribute of class).
@@ -347,8 +347,8 @@ class BEMFlushSq(object):
             hs = s_coord[2] # source height
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)),
                                 dtype = complex)
-            bar = tqdm(total = self.receivers.coord.shape[0],
-                    desc = 'Processing sound spectrum at each field point')
+            bar = tqdm(total = self.receivers.coord.shape[0], leave = bar_leave,
+                    desc = 'Processing spectrum at each field point')
             for jrec, r_coord in enumerate(self.receivers.coord):
                 xdist = (s_coord[0] - r_coord[0])**2.0
                 ydist = (s_coord[1] - r_coord[1])**2.0
