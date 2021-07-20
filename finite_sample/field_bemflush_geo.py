@@ -165,7 +165,7 @@ class BEMFlushGeo(object):
         else:
             freq_max = self.controls.freq[-1]
             max_el_size = self.air.c0 / (self.Nel_per_wavelenth * freq_max)
-            min_el_size = 0.5*max_el_size
+            min_el_size = 0.9*max_el_size
         return min_el_size, max_el_size
     
     def meshit(self, name):
@@ -244,6 +244,7 @@ class BEMFlushGeo(object):
         """
         # Get shape functions and weights
         Nksi, Nweights = ksi_weights_tri_mtx(n_gauss = self.n_gauss)
+        #Nksi = np.ascontiguousarray(Nksi)
         # Allocate memory for the surface pressure data (# each column a frequency, each line an element)
         Nel = self.elem_center.shape[0]
         self.p_surface = np.zeros((Nel, len(self.controls.k0)), dtype=complex)
@@ -269,7 +270,7 @@ class BEMFlushGeo(object):
             # Solve system of equations
             # print("Solving system of eqs for freq: {} Hz.".format(self.controls.freq[jf]))
             
-            self.p_surface[:, jf] = np.linalg.solve(c_mtx + gij, p_unpt)
+            self.p_surface[:, jf] = np.linalg.solve(c_mtx - gij, p_unpt)
             
             bar.update(1)
         bar.close()
@@ -308,6 +309,58 @@ class BEMFlushGeo(object):
                     bar.update(1)
                 bar.close()
             self.pres_s.append(pres_rec)
+    
+    def add_noise(self, snr = 30, uncorr = False):
+        """ Add gaussian noise to the simulated data.
+
+        The function is used to add noise to the pressure and particle velocity data.
+        it reads the clean signal and estimate its power. Then, it estimates the power
+        of the noise that would lead to the target SNR. Then it draws random numbers
+        from a Normal distribution with standard deviation =  noise power
+
+        Parameters
+        ----------
+        snr : float
+            The signal to noise ratio you want to emulate
+        uncorr : bool
+            If added noise to each receiver is uncorrelated or not.
+            If uncorr is True the the noise power is different for each receiver
+            and frequency. If uncorr is False the noise power is calculated from
+            the average signal magnitude of all receivers (for each frequency).
+            The default value is False
+        """
+        signal = self.pres_s[0]
+        try:
+            signal_u = self.uz_s[0]
+        except:
+            signal_u = np.zeros(1)
+        if uncorr:
+            signalPower_lin = (np.abs(signal)/np.sqrt(2))**2
+            signalPower_dB = 10 * np.log10(signalPower_lin)
+            noisePower_dB = signalPower_dB - snr
+            noisePower_lin = 10 ** (noisePower_dB/10)
+        else:
+            # signalPower_lin = (np.abs(np.mean(signal, axis=0))/np.sqrt(2))**2
+            signalPower_lin = ((np.mean(np.abs(signal), axis=0))/np.sqrt(2))**2
+            signalPower_dB = 10 * np.log10(signalPower_lin)
+            noisePower_dB = signalPower_dB - snr
+            noisePower_lin = 10 ** (noisePower_dB/10)
+            if signal_u.any() != 0:
+                signalPower_lin_u = (np.abs(np.mean(signal_u, axis=0))/np.sqrt(2))**2
+                signalPower_dB_u = 10 * np.log10(signalPower_lin_u)
+                noisePower_dB_u = signalPower_dB_u - snr
+                noisePower_lin_u = 10 ** (noisePower_dB_u/10)
+        np.random.seed(0)
+        noise = np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape) +\
+                1j*np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape)
+        # noise = 2*np.sqrt(noisePower_lin)*\
+        #     (np.random.randn(signal.shape[0], signal.shape[1]) + 1j*np.random.randn(signal.shape[0], signal.shape[1]))
+        self.pres_s[0] = signal + noise
+        if signal_u.any() != 0:
+            # print('Adding noise to particle velocity')
+            noise_u = np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape) +\
+                1j*np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape)
+            self.uz_s[0] = signal_u + noise_u
         
     def plot_scene(self, vsam_size = 1.2, renderer='notebook',
                    save_state = False, path ='', filename = '',
@@ -466,24 +519,24 @@ def ksi_weights_tri_mtx(n_gauss = 6):
     
     return Nksi, Nweights
 
-
-def gaussint_tri(r_coord, nodes, Nksi, Nweights, k0, beta = 1+0*1j):
+@njit
+def gaussint_tri(r_coord, nx, ny, area, Nksi, Nweights, k0, beta = 1+0*1j):
     # Vector of receiver coordinates (for vectorized integration)
     x_coord = r_coord[0] * np.ones(Nksi.shape[1])
     y_coord = r_coord[1] * np.ones(Nksi.shape[1])
     z_coord = r_coord[2] * np.ones(Nksi.shape[1])
     # Jacobian of squared element
-    jacobian = triangle_area(nodes)*2
+    jacobian = area*2 #triangle_area(nodes)*2
     #jacobian = ((nodes[:,0][1] - nodes[:,0][0])**2.0)/4.0
     # Gauss points on local element
-    xksi = nodes[:,0] @ Nksi
-    yksi = nodes[:,1] @ Nksi
+    xksi = np.dot(nx, Nksi) #nodes[:,0] @ Nksi
+    yksi = np.dot(ny, Nksi) #nodes[:,1] @ Nksi
     # Calculate the distance from el center to transformed integration points
     r = ((x_coord - xksi)**2 + (y_coord - yksi)**2 + z_coord**2)**0.5
     # Calculate green function
     g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
     #print(g.shape)
-    ival = np.dot(Nweights, g) #g @ Nweights
+    ival = np.sum((Nweights*g))#np.dot(Nweights, g) #g @ Nweights
     return ival, xksi, yksi
 
 
@@ -525,30 +578,13 @@ def bemflush_mtx_tri(el_center, nodes, elem_surf, areas,
         for j in np.arange(Nel):
             # Get nodes of element
             nodes_of_el = nodes[elem_surf[j]]
+            nx = np.array(nodes_of_el[:,0])
+            ny = np.array(nodes_of_el[:,1])
+            area = areas[j]
             # Integrate
-            bem_mtx[i,j], _, _ = gaussint_tri(r_colocation, nodes_of_el, 
+            bem_mtx[i,j], _, _ = gaussint_tri(r_colocation, nx, ny, area, 
                                               Nksi, Nweights, k0, beta = beta)
     return bem_mtx
-# =============================================================================
-#     for i in np.arange(Nel):
-#         jacobian = areas[i]
-#         xy_center = el_centerxy[i,:]
-#         x_center = xy_center[0] * np.ones(Nzeta.shape[1])
-#         y_center = xy_center[1] * np.ones(Nzeta.shape[1])
-# 
-#         for j in np.arange(Nel):
-#             xnode = nodesxy[elem_surf[j]][:,0]
-#             ynode = nodesxy[elem_surf[j]][:,1]
-# 
-#             xzeta = xnode @ Nzeta # Fix
-#             yzeta = ynode @ Nzeta
-#             # calculate the distance from el center to transformed integration points
-#             r = ((x_center - xzeta)**2 + (y_center - yzeta)**2)**0.5
-#             g = 1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
-#             #print(g.astype(np.complex64).dtype)
-#             bem_mtx[i,j] = g @ Nweights
-#     return bem_mtx
-# =============================================================================
 
 def bemflush_pscat_tri(r_coord, nodes, elem_surf, areas, 
                    Nksi, Nweights, k0, beta, ps):
@@ -588,38 +624,14 @@ def bemflush_pscat_tri(r_coord, nodes, elem_surf, areas,
     for j in np.arange(Nel):
         # Get nodes of element
         nodes_of_el = nodes[elem_surf[j]]
+        nx = np.array(nodes_of_el[:,0])
+        ny = np.array(nodes_of_el[:,1])
+        area = areas[j]
         # Integrate
-        gfield[j], _, _ = gaussint_tri(r_coord, nodes_of_el, 
+        gfield[j], _, _ = gaussint_tri(r_coord, nx, ny, area,
                                           Nksi, Nweights, k0, beta = beta)
     # Scattered pressure    
     p_scat = np.dot(gfield, ps)
     return p_scat
 
-# =============================================================================
-#     # Vector of receiver coordinates (for vectorized integration)
-#     x_coord = r_coord[0] * np.ones(Nzeta.shape[1])
-#     y_coord = r_coord[1] * np.ones(Nzeta.shape[1])
-#     z_coord = r_coord[2] * np.ones(Nzeta.shape[1])
-#     
-#     # Number of elements and jacobian
-#     Nel = elem_surf.shape[0]
-#     # Initialization
-#     gfield = np.zeros(Nel, dtype = np.complex64)
-#     #Loop through elements once
-#     for j in np.arange(Nel):
-#         jacobian = areas[j]
-#         # Transform the coordinate system for integration between -1,1 and +1,+1
-#         xnode = nodesxy[elem_surf[j]][:,0]
-#         ynode = nodesxy[elem_surf[j]][:,1]
-# 
-#         xzeta = xnode @ Nzeta
-#         yzeta = ynode @ Nzeta
-#         # Calculate the distance from el center to transformed integration points
-#         r = ((x_coord - xzeta)**2 + (y_coord - yzeta)**2 + z_coord**2)**0.5
-#         # Calculate green function
-#         g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) * jacobian
-#         # Integrate
-#         gfield[j] = g @ Nweights;
-#     p_scat = gfield @ ps
-#     return p_scat
-# =============================================================================
+

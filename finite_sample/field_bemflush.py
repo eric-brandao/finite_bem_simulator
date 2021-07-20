@@ -568,7 +568,8 @@ class BEMFlushSq(object):
         plt.show() # show plot
         
         
-    def plotly_scene(self, vsam_size = 2, renderer='notebook'):
+    def plotly_scene(self, vsam_size = 2, renderer='notebook',
+                     save_state = False, path ='', filename = ''):
         """ Plot of the scene using plotly
 
         Parameters
@@ -600,16 +601,22 @@ class BEMFlushSq(object):
                 color='darkgoldenrod', opacity=1),
             
             go.Scatter3d(x = self.sources.coord[:,0], y = self.sources.coord[:,1],
-                         z = self.sources.coord[:,2], mode='markers',
+                         z = self.sources.coord[:,2], mode='markers', name="Source",
                          marker=dict(size=12, color='red',opacity=0.5)),
             
             go.Scatter3d(x = self.receivers.coord[:,0], y = self.receivers.coord[:,1],
-                         z = self.receivers.coord[:,2], mode='markers',
+                         z = self.receivers.coord[:,2], mode='markers', name="Receivers",
                          marker=dict(size=4, color='blue',opacity=0.4)),
                       
             ])
+        camera = dict(up=dict(x=0, y=0, z=1),
+                      center=dict(x=0, y=0, z=0),
+                      eye=dict(x=1.5, y=1.5, z=0.75))
+        fig.update_layout(scene_camera=camera)
         #plot(fig, auto_open=True)
         pio.renderers.default = renderer
+        if save_state:
+            fig.write_image(path+filename+'.pdf', scale=3)
         fig.show()
         
     def plot_pres(self, figsize = (7,5)):
