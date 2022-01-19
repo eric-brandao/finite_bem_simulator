@@ -427,6 +427,41 @@ class BEMFlushGeo(object):
             fig.write_image(path+filename+'.pdf', scale=2)
         fig.show()
         
+    def save(self, filename = 'my_bemflush_geo', path = ''):
+        """ To save the simulation object as pickle
+
+        Parameters
+        ----------
+        filename : str
+            name of the file
+        pathname : str
+            path of folder to save the file
+        """
+        filename = filename
+        self.path_filename = path + filename + '.pkl'
+        f = open(self.path_filename, 'wb')
+        pickle.dump(self.__dict__, f, 2)
+        f.close()
+
+    def load(self, filename = 'my_bemflush_geo', path = ''):
+        """ Load a simulation object.
+
+        You can instantiate an empty object of the class and load a saved one.
+        It will overwrite the empty object.
+
+        Parameters
+        ----------
+        filename : str
+            name of the file
+        pathname : str
+            path of folder to save the file
+        """
+        lpath_filename = path + filename + '.pkl'
+        f = open(lpath_filename, 'rb')
+        tmp_dict = pickle.load(f)
+        f.close()
+        self.__dict__.update(tmp_dict)
+        
 def triangle_area(vertices):
     """Calculate the area of a triangle.
     

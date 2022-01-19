@@ -9,7 +9,8 @@ import plotly.graph_objects as go
 import plotly.io as pio
 # from insitu.controlsair import load_cfg
 import time
-from tqdm import tqdm
+#from tqdm import tqdm
+#from tqdm.notebook import trange, tqdm
 import pickle
 
 # import impedance-py/C++ module and other stuff
@@ -109,7 +110,7 @@ class BEMFlushSq(object):
     """
 
     def __init__(self, air = [], controls = [], material = [], sources = [], receivers = [],
-                 n_gauss = 36):
+                 n_gauss = 36, bar_mode = 'terminal'):
         """
 
         Parameters
@@ -124,6 +125,10 @@ class BEMFlushSq(object):
             The sound sources in the field
         receivers : object (Receiver)
             The receivers in the field
+        n_gauss : int
+            number of gauss points for integration
+        bar_mode : str
+            Type of bar to run (useful for notebook)
 
         The objects are stored as attributes in the class (easier to retrieve).
         """
@@ -144,6 +149,11 @@ class BEMFlushSq(object):
         self.uz_s = []
         #self.Nzeta, self.Nweights = ksi_weights_mtx(n_gauss = n_gauss) #zeta_weights()
         # print("pause")
+        if bar_mode == 'notebook':
+            from tqdm.notebook import trange, tqdm
+        else:
+            from tqdm import tqdm
+        self.tqdm = tqdm
 
     def generate_mesh(self, Lx = 1.0, Ly = 1.0, el_size = 0.05, Nel_per_wavelenth = []):
         """Generate the mesh for simulation.
@@ -240,7 +250,7 @@ class BEMFlushSq(object):
             el_3Dcoord
         r_unpt = np.linalg.norm(rsel, axis = 1)
         tinit = time.time()
-        bar = tqdm(total = len(self.controls.k0), leave = bar_leave,
+        bar = self.tqdm(total = len(self.controls.k0), leave = bar_leave,
             desc = 'Surf. pres. for each frequency (method 1). {} x {} m'.format(self.Lx, self.Ly))
         for jf, k0 in enumerate(self.controls.k0):
             #Version 1 (distances in loop) - most time spent here
@@ -275,7 +285,7 @@ class BEMFlushSq(object):
         el_3Dcoord[:,0:2] = self.el_center
         # Set a time count for performance check
         tinit = time.time()
-        bar = tqdm(total = len(self.controls.k0), leave = bar_leave,
+        bar = self.tqdm(total = len(self.controls.k0), leave = bar_leave,
             desc = 'Assembling BEM matrix for each freq. {} x {} m'.format(self.Lx, self.Ly))
         self.gij_f = []
         for jf, k0 in enumerate(self.controls.k0):
@@ -318,7 +328,7 @@ class BEMFlushSq(object):
             el_3Dcoord
         r_unpt = np.linalg.norm(rsel, axis = 1)
         tinit = time.time()
-        bar = tqdm(total = len(self.controls.k0), leave = bar_leave,
+        bar = self.tqdm(total = len(self.controls.k0), leave = bar_leave,
             desc = 'Surf. pres. for each frequency (method 2). {} x {} m'.format(self.Lx, self.Ly))
         for jf, k0 in enumerate(self.controls.k0):
             gij = self.beta[jf]*self.gij_f[jf]
@@ -347,7 +357,7 @@ class BEMFlushSq(object):
             hs = s_coord[2] # source height
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)),
                                 dtype = complex)
-            bar = tqdm(total = self.receivers.coord.shape[0], leave = bar_leave,
+            bar = self.tqdm(total = self.receivers.coord.shape[0], leave = bar_leave,
                     desc = 'Processing spectrum at each field point')
             for jrec, r_coord in enumerate(self.receivers.coord):
                 xdist = (s_coord[0] - r_coord[0])**2.0
