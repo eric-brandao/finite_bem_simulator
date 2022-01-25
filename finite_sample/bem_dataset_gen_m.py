@@ -15,7 +15,7 @@ from os import path
 import warnings
 
 from tqdm.notebook import trange, tqdm
-from controlsair import AirProperties, AlgControls
+from controlsair import AirProperties, AlgControls, sph2cart
 from material import PorousAbsorber
 from sources import Source
 from receivers import Receiver
