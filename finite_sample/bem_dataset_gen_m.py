@@ -43,8 +43,10 @@ class GenDataSet():
             self.load()
             print("Dataset already exists. I loaded it!")
         except:
-            self.meta_data_names =  ['Computed? (bool)', 'Start timestamp', 
-                'End timestamp', 'File name', 'Folder']
+            # self.meta_data_names =  ['Computed? (bool)', 'Start timestamp', 
+            #     'End timestamp', 'File name', 'Folder']
+            self.meta_data_names =  ['Folder', 'File name', 'Computed? (bool)',
+                'Start timestamp', 'End timestamp']
             self.main_folder = main_folder
             self.name = name
             self.base_folder = base_folder
@@ -97,7 +99,7 @@ class GenDataSet():
         if self.locked_status:
             warnings.warn("The Object is locked. You can not create new columns in a test matrix.")
         else:
-            list_of_columns = list_of_columns + self.meta_data_names
+            list_of_columns = self.meta_data_names + list_of_columns
             self.list_of_columns = list_of_columns
             self.df = pd.DataFrame(columns = self.list_of_columns)
             self.df.to_csv(self.main_folder + self.name + '.csv', index=False)
@@ -109,7 +111,7 @@ class GenDataSet():
         form the test matrix.
         """
         if self.locked_status:
-            warnings.warn("The Object is locked. You can not create new data in a test matrix.")
+            warnings.warn("The Object is locked. You can not create a new test matrix.")
         else:
             # Initialize the row counter
             self.which_row = 0
@@ -117,16 +119,26 @@ class GenDataSet():
             self.n_samples_dataset = len(args[0])
             cols_df = self.df.columns
             # looping through *args
-            for jcol, col in enumerate(args):
-                self.df[cols_df[jcol]]=pd.Series(args[jcol])
-            # initialize metadata
-            self.df[self.meta_data_names[0]] = np.repeat(False, self.n_samples_dataset)
-            for jm in np.arange(1, len(self.meta_data_names)):
+            for jcol in np.arange(len(args)):
+                self.df[cols_df[jcol+len(self.meta_data_names)]]=pd.Series(args[jcol])
+            for jm in np.arange(len(self.meta_data_names)):
                 self.df[self.meta_data_names[jm]] = np.repeat(None, self.n_samples_dataset)
+            # initialize metadata
+            self.df[self.meta_data_names[2]] = np.repeat(False, self.n_samples_dataset)
             # save the csv
             log_exists = path.isfile(self.main_folder + self.name + '.csv')
             if (force_restart_csv) or (log_exists == False):
                 self.df.to_csv(self.main_folder + self.name + '.csv', index=False)
+            # for jcol, col in enumerate(args):
+            #     self.df[cols_df[jcol]]=pd.Series(args[jcol])
+            # for jm in np.arange(len(self.meta_data_names)):
+            #     self.df[self.meta_data_names[jm]] = np.repeat(None, self.n_samples_dataset)
+            # # initialize metadata
+            # self.df[self.meta_data_names[2]] = np.repeat(False, self.n_samples_dataset)
+            # # save the csv
+            # log_exists = path.isfile(self.main_folder + self.name + '.csv')
+            # if (force_restart_csv) or (log_exists == False):
+            #     self.df.to_csv(self.main_folder + self.name + '.csv', index=False)
 
     def generate_subfolders(self, n_files_folder = 5000):
         """Generate a number of subfolders with names 'fX'
@@ -175,7 +187,7 @@ class GenDataSet():
         file_name = f'bemf_{self.name}_{self.which_row}'
         return path, file_name
 
-    def update_organizer(self, start_timestamp, stop_timestamp, file_name, path, cols):
+    def update_organizer(self, path, file_name, start_timestamp, stop_timestamp):
         """ Updates the organizer object
 
         Updates the data frame metadata and saves the object and csv file
@@ -192,7 +204,7 @@ class GenDataSet():
             Path to the field file
         """
         cols_df = self.df.columns
-        self.df.loc[self.which_row, [cols_df[cols[0]], cols_df[cols[1]], cols_df[cols[2]], cols_df[cols[3]], cols_df[cols[4]]]] = [True, start_timestamp, stop_timestamp, file_name, path]
+        self.df.loc[self.which_row, [cols_df[0], cols_df[1], cols_df[2], cols_df[3], cols_df[4]]] = [path, file_name, True, start_timestamp, stop_timestamp]
         # Save object organizer and update csv file
         self.df.to_csv(self.main_folder + self.name + '.csv', index=False)
         self.save()
@@ -371,17 +383,17 @@ class GenDataSetBEMflushSq(GenDataSet):
         """Gets the sample length and width
         """
         ### Sample size
-        Lx = self.df[self.df.columns[0]][self.which_row]
-        Ly = self.df[self.df.columns[1]][self.which_row]
+        Lx = self.df[self.df.columns[5]][self.which_row]
+        Ly = self.df[self.df.columns[6]][self.which_row]
         return Lx, Ly
     
     def get_source(self, ):
         """Gets the sound source object
         """
         # Source
-        r = self.df[self.df.columns[4]][self.which_row]
-        theta = np.deg2rad(self.df[self.df.columns[5]][self.which_row])
-        phi= np.deg2rad(self.df[self.df.columns[6]][self.which_row])
+        r = self.df[self.df.columns[9]][self.which_row]
+        theta = np.deg2rad(self.df[self.df.columns[10]][self.which_row])
+        phi= np.deg2rad(self.df[self.df.columns[11]][self.which_row])
         s_coord = sph2cart(r, np.pi/2-theta, phi)
         source = Source(coord = s_coord)
         return source
@@ -389,9 +401,9 @@ class GenDataSetBEMflushSq(GenDataSet):
     def get_material(self,):
         """Gets the material object
         """
-        theta = np.deg2rad(self.df[self.df.columns[5]][self.which_row])
-        resistivity = self.df[self.df.columns[2]][self.which_row]
-        thickness = self.df[self.df.columns[3]][self.which_row]
+        theta = np.deg2rad(self.df[self.df.columns[10]][self.which_row])
+        resistivity = self.df[self.df.columns[7]][self.which_row]
+        thickness = self.df[self.df.columns[8]][self.which_row]
         material = PorousAbsorber(air = self.air, controls = self.controls)
         material.miki(resistivity = resistivity)
         material.layer_over_rigid(thickness = thickness, theta = theta)
@@ -400,8 +412,8 @@ class GenDataSetBEMflushSq(GenDataSet):
     def get_noise(self,):
         """Gets the noise conditions
         """
-        add_noise = self.df[self.df.columns[7]][self.which_row]
-        snr = self.df[self.df.columns[8]][self.which_row]
+        add_noise = self.df[self.df.columns[12]][self.which_row]
+        snr = self.df[self.df.columns[13]][self.which_row]
         return add_noise, snr
 
     def gen_dataset(self,):
@@ -432,8 +444,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             # save field
             field.save(path = path, filename = file_name)
             # Update dataframe and csv
-            self.update_organizer(start_timestamp, stop_timestamp, file_name, 
-                path, cols = [9, 10, 11, 12, 13])
+            self.update_organizer(path, file_name, start_timestamp, stop_timestamp)
             # Increment row
             self.which_row += 1
             bar.update(1)        
@@ -460,8 +471,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             # save field
             field.save(path = path, filename = file_name)
             # Update dataframe and csv
-            self.update_organizer(start_timestamp, stop_timestamp, file_name, 
-                path, cols = [2, 3, 4, 5, 6])
+            self.update_organizer(path, file_name, start_timestamp, stop_timestamp)
             # Increment row
             self.which_row += 1
             bar.update(1)        
@@ -506,8 +516,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             # # save field
             field.save(path = path, filename = file_name)
             # Update dataframe and csv
-            self.update_organizer(start_timestamp, stop_timestamp, file_name, 
-                path, cols = [9, 10, 11, 12, 13])
+            self.update_organizer(path, file_name, start_timestamp, stop_timestamp)
             # # Increment row
             self.which_row += 1
             bar.update(1)        
