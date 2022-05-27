@@ -19,6 +19,7 @@ except:
     from controlsair import plot_spk
 from sample_geometries import Rectangle, Circle
 
+from controlsair import add_noise, add_noise2
 import gmsh
 import meshio
 
@@ -114,7 +115,7 @@ class BEMFlushGeo(object):
     def __init__(self, air = [], controls = [], material = [],
                  sources = [], receivers = [],  
                  min_max_el_size = [0.05, 0.1], Nel_per_wavelenth = [],
-                 n_gauss = 6):
+                 n_gauss = 6, bar_mode = 'terminal'):
         """
 
         Parameters
@@ -155,6 +156,11 @@ class BEMFlushGeo(object):
         self.uy_s = []
         self.uz_s = []
         #self.Nzeta, self.Nweights = zeta_weights_tri()
+        if bar_mode == 'notebook':
+            from tqdm.notebook import trange, tqdm
+        else:
+            from tqdm import tqdm
+        self.tqdm = tqdm
     
     def get_min_max_elsize(self):
         """ Gets the minimum and maximum element size
@@ -277,7 +283,7 @@ class BEMFlushGeo(object):
         tend = time.time()
         #print("elapsed time: {}".format(tend-tinit))
 
-    def p_fps(self,):
+    def p_fps(self, bar_leave = True):
         """ Calculates the total sound pressure spectrum at the receivers coordinates.
 
         The sound pressure spectrum is calculatef for all receivers (attribute of class).
@@ -290,6 +296,8 @@ class BEMFlushGeo(object):
         for js, s_coord in enumerate(self.sources.coord):
             hs = s_coord[2] # source height
             pres_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            bar = self.tqdm(total = self.receivers.coord.shape[0], leave = bar_leave,
+                    desc = 'Processing spectrum at each field point')
             for jrec, r_coord in enumerate(self.receivers.coord):
                 xdist = (s_coord[0] - r_coord[0])**2.0
                 ydist = (s_coord[1] - r_coord[1])**2.0
@@ -297,20 +305,22 @@ class BEMFlushGeo(object):
                 zr = r_coord[2]  # receiver height
                 r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
                 r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
-                print('Calculate sound pressure for source {} at ({}) and receiver {} at ({})'.format(js+1, s_coord, jrec+1, r_coord))
-                bar = tqdm(total = len(self.controls.k0),
-                    desc = 'Processing sound pressure at field point')
+                #print('Calculate sound pressure for source {} at ({}) and receiver {} at ({})'.format(js+1, s_coord, jrec+1, r_coord))
+# =============================================================================
+#                 bar = tqdm(total = len(self.controls.k0),
+#                     desc = 'Processing sound pressure at field point')
+# =============================================================================
                 for jf, k0 in enumerate(self.controls.k0):
                     p_scat = bemflush_pscat_tri(r_coord, self.nodes, 
                         self.elem_surf, self.elem_area, Nksi, 
                         Nweights, k0, self.beta[jf], self.p_surface[:,jf])
                     pres_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1) +\
                         (np.exp(-1j * k0 * r2) / r2) + p_scat
-                    bar.update(1)
-                bar.close()
+                bar.update(1)
+            bar.close()
             self.pres_s.append(pres_rec)
     
-    def add_noise(self, snr = 30, uncorr = False):
+    def add_noise(self, snr = 30, uncorr = False, seed = 0):
         """ Add gaussian noise to the simulated data.
 
         The function is used to add noise to the pressure and particle velocity data.
@@ -341,7 +351,7 @@ class BEMFlushGeo(object):
             noisePower_lin = 10 ** (noisePower_dB/10)
         else:
             # signalPower_lin = (np.abs(np.mean(signal, axis=0))/np.sqrt(2))**2
-            signalPower_lin = ((np.mean(np.abs(signal), axis=0))/np.sqrt(2))**2
+            signalPower_lin = np.mean((np.abs(signal)/np.sqrt(2))**2, axis=0)
             signalPower_dB = 10 * np.log10(signalPower_lin)
             noisePower_dB = signalPower_dB - snr
             noisePower_lin = 10 ** (noisePower_dB/10)
@@ -350,12 +360,19 @@ class BEMFlushGeo(object):
                 signalPower_dB_u = 10 * np.log10(signalPower_lin_u)
                 noisePower_dB_u = signalPower_dB_u - snr
                 noisePower_lin_u = 10 ** (noisePower_dB_u/10)
-        np.random.seed(0)
+        #seed = np.random.randint(low=0, high =1000)
+        np.random.seed(seed)
         noise = np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape) +\
                 1j*np.random.normal(0, np.sqrt(noisePower_lin), size = signal.shape)
-        # noise = 2*np.sqrt(noisePower_lin)*\
-        #     (np.random.randn(signal.shape[0], signal.shape[1]) + 1j*np.random.randn(signal.shape[0], signal.shape[1]))
+# =============================================================================
+#         Amp = np.random.normal(np.sqrt(2*noisePower_lin), np.sqrt(2*noisePower_lin)/2, size = signal.shape)
+#         noise = (np.abs(Amp))*np.exp(1j*np.random.uniform(low=-np.pi, high=np.pi, size=signal.shape))
+# =============================================================================
         self.pres_s[0] = signal + noise
+
+        meas_snr = np.mean(10 * np.log10(np.abs(signal)**2) - 10 * np.log10(np.abs(noise)**2))
+        std_snr = np.std(10 * np.log10(np.abs(signal)**2) - 10 * np.log10(np.abs(noise)**2))
+        print('mean -std snr {} - {}'.format(meas_snr, std_snr))
         if signal_u.any() != 0:
             # print('Adding noise to particle velocity')
             noise_u = np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape) +\

@@ -297,7 +297,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             self.Nel_per_wavelenth = Nel_per_wavelenth
 
     def run_bemfsq(self, Lx, Ly, material, source, add_noise = False, 
-        snr = 1000, from_base = False):
+        snr = 1000, from_base = False, bar_disable = False):
         """Run one BEM flush (squared elements) simulation
 
         Parameters
@@ -316,6 +316,8 @@ class GenDataSetBEMflushSq(GenDataSet):
             value of Signal to Noise ratio
         from_base : bool
             choose if you want to run from base or not
+        bar_disable : bool
+            choose if you want to display the progress bar
         """
         # Instantiate Field object from base field
         field = BEMFlushSq(air = self.air, controls = self.controls, 
@@ -323,15 +325,15 @@ class GenDataSetBEMflushSq(GenDataSet):
             n_gauss = self.n_gauss, bar_mode = 'notebook')
         field.generate_mesh(Lx = Lx, Ly = Ly, 
             Nel_per_wavelenth = self.Nel_per_wavelenth)
-        field.assemble_gij(bar_leave = False)
-        field.psurf2(erase_gij = True, bar_leave = False)
+        field.assemble_gij(bar_leave = False, bar_disable = bar_disable)
+        field.psurf2(erase_gij = True, bar_leave = False, bar_disable = bar_disable)
         # Evaluate pressure at all field points
-        field.p_fps(bar_leave = False)
+        field.p_fps(bar_leave = False, bar_disable = bar_disable)
         if add_noise:
             field.add_noise(snr = snr)
         return field
     
-    def run_base_case(self, Lx, Ly):
+    def run_base_case(self, Lx, Ly, bar_disable = False):
         """Run base case of BEM flush (squared elements) simulation
 
         Parameters
@@ -340,16 +342,18 @@ class GenDataSetBEMflushSq(GenDataSet):
             lenght of sample
         Ly : float
             width of sample
+        bar_disable : bool
+            choose if you want to display the progress bar
         """
         # Instantiate Field object base field
         field = BEMFlushSq(air = self.air, controls = self.controls, 
             n_gauss = self.n_gauss, bar_mode = 'notebook')
         field.generate_mesh(Lx = Lx, Ly = Ly, Nel_per_wavelenth = self.Nel_per_wavelenth)
-        field.assemble_gij(bar_leave = False)
+        field.assemble_gij(bar_leave = False, bar_disable = bar_disable)
         return field
     
     def run_from_base(self, base_field, material, source, 
-        add_noise = False, snr = 1000):
+        add_noise = False, snr = 1000, bar_disable = False):
         """Run a case of BEM flush (squared elements) simulation from base
 
         Parameters
@@ -364,6 +368,8 @@ class GenDataSetBEMflushSq(GenDataSet):
             choose if you want to add noise or not
         snr : float
             value of Signal to Noise ratio
+        bar_disable : bool
+            choose if you want to display the progress bar
         """
         # Instantiate Field object from base field
         field = BEMFlushSq(air = self.air, controls = self.controls, 
@@ -372,9 +378,9 @@ class GenDataSetBEMflushSq(GenDataSet):
         field.parse_mesh(base_field)
         field.gij_f = base_field.gij_f
         # Calculate the surface pressure
-        field.psurf2(erase_gij = True, bar_leave = False)
+        field.psurf2(erase_gij = True, bar_leave = False, bar_disable = bar_disable)
         # Evaluate pressure at all field points
-        field.p_fps(bar_leave = False)
+        field.p_fps(bar_leave = False, bar_disable = bar_disable)
         if add_noise:
             field.add_noise(snr = snr)
         return field
@@ -416,7 +422,7 @@ class GenDataSetBEMflushSq(GenDataSet):
         snr = self.df[self.df.columns[13]][self.which_row]
         return add_noise, snr
 
-    def gen_dataset(self,):
+    def gen_dataset(self, bar_disable = False):
         """Controls the dataset generation
         """
         # Initialize main bar
@@ -437,7 +443,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             # run single simulation
             start_timestamp = datetime.now()
             field = self.run_bemfsq(Lx, Ly, material, source, add_noise = add_noise, 
-                snr = snr, from_base = False)
+                snr = snr, from_base = False, bar_disable = bar_disable)
             stop_timestamp = datetime.now()
             # Choose where to save the data
             path, file_name = self.get_path_file_names()
@@ -450,7 +456,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             bar.update(1)        
         bar.close()
 
-    def gen_base_dataset(self,):
+    def gen_base_dataset(self, bar_disable = False):
         """Controls the dataset generation (base sample sizes)
         """
         # Initialize main bar
@@ -464,7 +470,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             Lx, Ly = self.get_sample_size()
             # run single simulation
             start_timestamp = datetime.now()
-            field = self.run_base_case(Lx, Ly)
+            field = self.run_base_case(Lx, Ly, bar_disable = bar_disable)
             stop_timestamp = datetime.now()
             # Choose where to save the data
             path, file_name = self.get_path_file_names()
@@ -477,7 +483,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             bar.update(1)        
         bar.close()
     
-    def gen_dataset_frombase(self,):
+    def gen_dataset_frombase(self, bar_disable = False):
         """Controls the dataset generation from base files
 
         Repeating the sample sizes is necessary
@@ -509,7 +515,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             base_field = BEMFlushSq()
             base_field.load(path = base_folder, filename = base_filename)
             field = self.run_from_base(base_field, material, source, 
-                add_noise = add_noise, snr = snr)
+                add_noise = add_noise, snr = snr, bar_disable = bar_disable)
             stop_timestamp = datetime.now()
             # # Choose where to save the data
             path, file_name = self.get_path_file_names()
