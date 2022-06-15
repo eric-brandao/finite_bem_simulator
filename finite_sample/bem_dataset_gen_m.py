@@ -41,6 +41,7 @@ class GenDataSet():
         """
         try:
             self.load()
+            print("Dataset already exists. I loaded it!")
         except:
             # self.meta_data_names =  ['Computed? (bool)', 'Start timestamp', 
             #     'End timestamp', 'File name', 'Folder']
@@ -66,7 +67,7 @@ class GenDataSet():
         tmp_dict = pickle.load(f)
         f.close()
         self.__dict__.update(tmp_dict)
-        print("Dataset already exists. I loaded it!")
+        
 
     def lock_object(self,):
         """Lock certain methods of the object
