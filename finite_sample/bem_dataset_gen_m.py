@@ -41,7 +41,6 @@ class GenDataSet():
         """
         try:
             self.load()
-            print("Dataset already exists. I loaded it!")
         except:
             # self.meta_data_names =  ['Computed? (bool)', 'Start timestamp', 
             #     'End timestamp', 'File name', 'Folder']
@@ -67,6 +66,7 @@ class GenDataSet():
         tmp_dict = pickle.load(f)
         f.close()
         self.__dict__.update(tmp_dict)
+        print("Dataset already exists. I loaded it!")
 
     def lock_object(self,):
         """Lock certain methods of the object
@@ -129,16 +129,6 @@ class GenDataSet():
             log_exists = path.isfile(self.main_folder + self.name + '.csv')
             if (force_restart_csv) or (log_exists == False):
                 self.df.to_csv(self.main_folder + self.name + '.csv', index=False)
-            # for jcol, col in enumerate(args):
-            #     self.df[cols_df[jcol]]=pd.Series(args[jcol])
-            # for jm in np.arange(len(self.meta_data_names)):
-            #     self.df[self.meta_data_names[jm]] = np.repeat(None, self.n_samples_dataset)
-            # # initialize metadata
-            # self.df[self.meta_data_names[2]] = np.repeat(False, self.n_samples_dataset)
-            # # save the csv
-            # log_exists = path.isfile(self.main_folder + self.name + '.csv')
-            # if (force_restart_csv) or (log_exists == False):
-            #     self.df.to_csv(self.main_folder + self.name + '.csv', index=False)
 
     def generate_subfolders(self, n_files_folder = 5000):
         """Generate a number of subfolders with names 'fX'
@@ -238,6 +228,24 @@ class GenDataSet():
         mean_datetime = (self.df['End timestamp']-self.df['Start timestamp']).mean()
         print(f"Mean simulation time is {mean_datetime.total_seconds()} [s]")
         print(f"Total simulation time is {sum_time}")
+    
+    def reconstruct_picke(self, n_samples_dataset, n_files_folder, n_folders, which_row):
+        """Reconstructs pickle file in case something went wrong. Use it carefully.
+        """
+        if self.locked_status == False:
+            self.df = pd.read_csv(self.main_folder + self.name + '.csv')
+            self.list_of_columns = list(self.df.columns)
+            self.get_basedataset_specs()
+            self.n_samples_dataset = n_samples_dataset
+            self.n_files_folder = n_files_folder
+            self.n_folders = n_folders
+            self.folder_names = []
+            for folder in os.listdir(self.main_folder):
+                if os.path.isdir(self.main_folder + folder):
+                    self.folder_names.append(folder)
+            self.which_row = which_row
+            self.lock_object()
+            self.save()
 
 class GenDataSetBEMflushSq(GenDataSet):
     """Control dataset generation for finite samples.
