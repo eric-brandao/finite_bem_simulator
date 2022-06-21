@@ -305,7 +305,7 @@ class GenDataSetBEMflushSq(GenDataSet):
             self.n_gauss = n_gauss
             self.Nel_per_wavelenth = Nel_per_wavelenth
 
-    def run_bemfsq(self, Lx, Ly, material, source, add_noise = False, 
+    def run_bemfsq(self, Lx, Ly, material, source, receivers, add_noise = False, 
         snr = 1000, from_base = False, bar_disable = False):
         """Run one BEM flush (squared elements) simulation
 
@@ -330,7 +330,7 @@ class GenDataSetBEMflushSq(GenDataSet):
         """
         # Instantiate Field object from base field
         field = BEMFlushSq(air = self.air, controls = self.controls, 
-            material = material, sources = source, receivers = self.receivers, 
+            material = material, sources = source, receivers = receivers, 
             n_gauss = self.n_gauss, bar_mode = 'notebook')
         field.generate_mesh(Lx = Lx, Ly = Ly, 
             Nel_per_wavelenth = self.Nel_per_wavelenth)
@@ -430,6 +430,16 @@ class GenDataSetBEMflushSq(GenDataSet):
         add_noise = self.df[self.df.columns[12]][self.which_row]
         snr = self.df[self.df.columns[13]][self.which_row]
         return add_noise, snr
+    
+    def get_receivers(self, x_len = 0.6, y_len = 0.6, n_x = 12, n_y = 12):
+        """Gets the receiver object
+        """
+        # Source
+        zr = self.df[self.df.columns[14]][self.which_row]
+        
+        receivers = Receiver()
+        receivers.planar_array(x_len = x_len, y_len = y_len, n_x = n_x, n_y = n_x, zr = zr)
+        return receivers
 
     def gen_dataset(self, bar_disable = False):
         """Controls the dataset generation
@@ -451,7 +461,43 @@ class GenDataSetBEMflushSq(GenDataSet):
             add_noise, snr = self.get_noise()
             # run single simulation
             start_timestamp = datetime.now()
-            field = self.run_bemfsq(Lx, Ly, material, source, add_noise = add_noise, 
+            field = self.run_bemfsq(Lx, Ly, material, source, self.receivers, add_noise = add_noise, 
+                snr = snr, from_base = False, bar_disable = bar_disable)
+            stop_timestamp = datetime.now()
+            # Choose where to save the data
+            path, file_name = self.get_path_file_names()
+            # save field
+            field.save(path = path, filename = file_name)
+            # Update dataframe and csv
+            self.update_organizer(path, file_name, start_timestamp, stop_timestamp)
+            # Increment row
+            self.which_row += 1
+            bar.update(1)        
+        bar.close()
+
+    def gen_dataset_recrand(self, bar_disable = False):
+        """Controls the dataset generation
+        """
+        # Initialize main bar
+        bar = tqdm(total = self.n_samples_dataset, desc = 'Generating database', 
+            initial = self.which_row + 1)
+        # Main for loop
+        while self.which_row < self.n_samples_dataset:
+            # # Get simulation parameters from dataframe
+            cols_df = self.df.columns
+            # ### Sample size
+            Lx, Ly = self.get_sample_size()
+            # Source
+            source = self.get_source()
+            # Receivers
+            receivers = self.get_receivers()
+            ### Material
+            material = self.get_material()
+            ### Noise
+            add_noise, snr = self.get_noise()
+            # run single simulation
+            start_timestamp = datetime.now()
+            field = self.run_bemfsq(Lx, Ly, material, source, receivers, add_noise = add_noise, 
                 snr = snr, from_base = False, bar_disable = bar_disable)
             stop_timestamp = datetime.now()
             # Choose where to save the data
