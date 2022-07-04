@@ -436,9 +436,12 @@ class GenDataSetBEMflushSq(GenDataSet):
         """
         # Source
         zr = self.df[self.df.columns[14]][self.which_row]
-        
+        rotation_angle_deg = self.df[self.df.columns[15]][self.which_row]
+        rotation_angle_rad = np.deg2rad(rotation_angle_deg)
         receivers = Receiver()
         receivers.planar_array(x_len = x_len, y_len = y_len, n_x = n_x, n_y = n_x, zr = zr)
+        if rotation_angle_deg != 0:
+            receivers.rotate_array_z(theta = rotation_angle_rad)
         return receivers
 
     def gen_dataset(self, bar_disable = False):

@@ -314,7 +314,20 @@ class Receiver():
                 distance from the origin to the center of the array
         """
         pass
+    
+    def rotate_array_z(self, theta = 0):
+        """Rotate the array along the z-axis
 
+        Parameters
+        ----------
+            theta : float
+                rotation angle in radians
+        """
+        rot_matrix = np.array([[np.cos(theta), -np.sin(theta), 0],
+                      [np.sin(theta), np.cos(theta), 0],
+                      [0, 0, 1]])
+
+        self.coord = self.coord @ rot_matrix
 
 
 # class Receivers():
