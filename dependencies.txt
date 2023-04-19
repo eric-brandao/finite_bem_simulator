@@ -1,3 +1,11 @@
-Dependencies
-
-quaternion
+1 - conda create -n finitebemflush python=3.7
+2 - deactivate base and activate created env
+2 - install jupyter and spyder using anaconda navigator
+3 - Dependencies
+ - pip install numpy scipy meshio plotly numba matplotlib bempp-cl cloudpickle
+ - conda install -c conda-forge quaternion
+ - pip install tqdm
+ - pip install --upgrade gmsh
+ - pip install -U scikit-learn
+ - pip install pandas
+ - conda install -c conda-forge ipywidgets

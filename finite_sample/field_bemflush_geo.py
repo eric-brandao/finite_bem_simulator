@@ -19,7 +19,7 @@ except:
     from controlsair import plot_spk
 from sample_geometries import Rectangle, Circle
 
-from controlsair import add_noise, add_noise2
+from general_functions import add_noise, add_noise2
 import gmsh
 import meshio
 
@@ -319,7 +319,109 @@ class BEMFlushGeo(object):
                 bar.update(1)
             bar.close()
             self.pres_s.append(pres_rec)
+
+    def uz_fps(self, bar_leave = True):
+        """ Calculates the z component of particle vel. at the receivers coordinates.
+
+        The z component of particle velocity is calculatef for all receivers (attribute of class).
+        The quantity calculated is the uz = incident + scattered.
+        """
+        # Get shape functions and weights
+        Nksi, Nweights = ksi_weights_tri_mtx(n_gauss = self.n_gauss)
+        # Loop the receivers
+        self.uz_s = []
+        for js, s_coord in enumerate(self.sources.coord):
+            hs = s_coord[2] # source height
+            uz_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            bar = self.tqdm(total = self.receivers.coord.shape[0], leave = bar_leave,
+                    desc = 'Processing uz spectrum at each field point')
+            for jrec, r_coord in enumerate(self.receivers.coord):
+                xdist = (s_coord[0] - r_coord[0])**2.0
+                ydist = (s_coord[1] - r_coord[1])**2.0
+                r = (xdist + ydist)**0.5 # horizontal distance source-receiver
+                zr = r_coord[2]  # receiver height
+                r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
+                r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
+                for jf, k0 in enumerate(self.controls.k0):
+                    uz_scat = bemflush_uzscat_tri(r_coord, self.nodes, 
+                        self.elem_surf, self.elem_area, Nksi, 
+                        Nweights, k0, self.beta[jf], self.p_surface[:,jf])
+                    uz_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+                         (1 + (1 / (1j * k0 * r1)))* ((hs - zr)/r1)-\
+                         (np.exp(-1j * k0 * r2) / r2) *\
+                         (1 + (1 / (1j * k0 * r2))) * ((hs + zr)/r2) - uz_scat
+                bar.update(1)
+            bar.close()
+            self.uz_s.append(uz_rec)
     
+    def ux_fps(self, bar_leave = True):
+        """ Calculates the x component of particle vel. at the receivers coordinates.
+
+        The x component of particle velocity is calculatef for all receivers (attribute of class).
+        The quantity calculated is the ux = incident + scattered.
+        """
+        # Get shape functions and weights
+        Nksi, Nweights = ksi_weights_tri_mtx(n_gauss = self.n_gauss)
+        # Loop the receivers
+        self.ux_s = []
+        for js, s_coord in enumerate(self.sources.coord):
+            hs = s_coord[2] # source height
+            ux_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            bar = self.tqdm(total = self.receivers.coord.shape[0], leave = bar_leave,
+                    desc = 'Processing ux spectrum at each field point')
+            for jrec, r_coord in enumerate(self.receivers.coord):
+                xdist = (s_coord[0] - r_coord[0])**2.0
+                ydist = (s_coord[1] - r_coord[1])**2.0
+                r = (xdist + ydist)**0.5 # horizontal distance source-receiver
+                zr = r_coord[2]  # receiver height
+                r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
+                r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
+                for jf, k0 in enumerate(self.controls.k0):
+                    ux_scat = bemflush_uxscat_tri(r_coord, self.nodes, 
+                        self.elem_surf, self.elem_area, Nksi, 
+                        Nweights, k0, self.beta[jf], self.p_surface[:,jf])
+                    ux_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+                         (1 + (1 / (1j * k0 * r1)))* (-r_coord[0]/r1)-\
+                         (np.exp(-1j * k0 * r2) / r2) *\
+                         (1 + (1 / (1j * k0 * r2))) * (-r_coord[0]/r2) - ux_scat
+                bar.update(1)
+            bar.close()
+            self.ux_s.append(ux_rec)
+     
+    def uy_fps(self, bar_leave = True):
+        """ Calculates the y component of particle vel. at the receivers coordinates.
+
+        The y component of particle velocity is calculatef for all receivers (attribute of class).
+        The quantity calculated is the uy = incident + scattered.
+        """
+        # Get shape functions and weights
+        Nksi, Nweights = ksi_weights_tri_mtx(n_gauss = self.n_gauss)
+        # Loop the receivers
+        self.uy_s = []
+        for js, s_coord in enumerate(self.sources.coord):
+            hs = s_coord[2] # source height
+            uy_rec = np.zeros((self.receivers.coord.shape[0], len(self.controls.freq)), dtype = np.csingle)
+            bar = self.tqdm(total = self.receivers.coord.shape[0], leave = bar_leave,
+                    desc = 'Processing uy spectrum at each field point')
+            for jrec, r_coord in enumerate(self.receivers.coord):
+                xdist = (s_coord[0] - r_coord[0])**2.0
+                ydist = (s_coord[1] - r_coord[1])**2.0
+                r = (xdist + ydist)**0.5 # horizontal distance source-receiver
+                zr = r_coord[2]  # receiver height
+                r1 = (r ** 2 + (hs - zr) ** 2) ** 0.5
+                r2 = (r ** 2 + (hs + zr) ** 2) ** 0.5
+                for jf, k0 in enumerate(self.controls.k0):
+                    uy_scat = bemflush_uyscat_tri(r_coord, self.nodes, 
+                        self.elem_surf, self.elem_area, Nksi, 
+                        Nweights, k0, self.beta[jf], self.p_surface[:,jf])
+                    uy_rec[jrec, jf] = (np.exp(-1j * k0 * r1) / r1)*\
+                         (1 + (1 / (1j * k0 * r1)))* (-r_coord[1]/r1)-\
+                         (np.exp(-1j * k0 * r2) / r2) *\
+                         (1 + (1 / (1j * k0 * r2))) * (-r_coord[1]/r2) - uy_scat
+                bar.update(1)
+            bar.close()
+            self.uy_s.append(uy_rec)
+
     def add_noise(self, snr = 30, uncorr = False, seed = 0):
         """ Add gaussian noise to the simulated data.
 
@@ -378,11 +480,11 @@ class BEMFlushGeo(object):
             noise_u = np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape) +\
                 1j*np.random.normal(0, np.sqrt(noisePower_lin_u), size = signal_u.shape)
             self.uz_s[0] = signal_u + noise_u
-        
-    def plot_scene(self, vsam_size = 1.2, renderer='notebook',
+            
+    def plot_sample(self, vsam_size = 1.2, renderer='notebook',
                    save_state = False, path ='', filename = '',
                    plot_elemcenter = False):
-        """ Plot of the scene using plotly
+        """ Plot of the sample and baffle using plotly
 
         Parameters
         ----------
@@ -397,6 +499,7 @@ class BEMFlushGeo(object):
         plot_elemcenter : bool
             wether or not to plot the element center for visual inspection
         """
+        self.baffle_size = vsam_size
         # baffle vertices
         baffle_vertices = np.array([[-self.baffle_size/2, -self.baffle_size/2, 0.0],
                 [self.baffle_size/2, -self.baffle_size/2, 0.0],
@@ -417,20 +520,6 @@ class BEMFlushGeo(object):
         # add the baffle
         fig.add_trace(go.Mesh3d(x=baffle_vertices[:,0], y=baffle_vertices[:,1],
                   z=baffle_vertices[:,2], color='grey', opacity=0.70))
-        # add the receivers
-        if self.receivers != None:
-            fig.add_trace(go.Scatter3d(x = self.receivers.coord[:,0],
-                                       y = self.receivers.coord[:,1],
-                                       z = self.receivers.coord[:,2], 
-                                       name="Receivers", mode='markers',
-                                       marker=dict(size=4, color='blue',opacity=0.4)))
-        # add the sources
-        if self.sources != None:
-                fig.add_trace(go.Scatter3d(x = self.sources.coord[:,0],
-                                           y = self.sources.coord[:,1],
-                                           z = self.sources.coord[:,2],
-                                           name="Sources",mode='markers',
-                                           marker=dict(size=12, color='red',opacity=0.5)))
         
         # add el center
         if plot_elemcenter:
@@ -439,6 +528,61 @@ class BEMFlushGeo(object):
                 name="El. centers", mode='markers',
                 marker=dict(size=2, color='black',opacity=0)))
      
+        pio.renderers.default = renderer
+        
+        return fig
+    
+    def plot_source(self, fig):
+        """ Add source to the scene using plotly
+        """
+        # add the sources
+        if self.sources != None:
+            fig.add_trace(go.Scatter3d(x = self.sources.coord[:,0],
+                                       y = self.sources.coord[:,1],
+                                       z = self.sources.coord[:,2],
+                                       name="Sources",mode='markers',
+                                       marker=dict(size=12, color='red',opacity=0.5)))
+        return fig
+    
+    def plot_receivers(self, fig):
+        """ Add receivers to the scene using plotly
+        """
+        # add the receivers
+        if self.receivers != None:
+            fig.add_trace(go.Scatter3d(x = self.receivers.coord[:,0],
+                                       y = self.receivers.coord[:,1],
+                                       z = self.receivers.coord[:,2], 
+                                       name="Receivers", mode='markers',
+                                       marker=dict(size=4, color='blue',opacity=0.4)))
+        return fig
+        
+    def plot_scene(self, vsam_size = 1.2, renderer='notebook',
+                   save_state = False, path ='', filename = '',
+                   plot_elemcenter = False):
+        """ Plot of the scene using plotly
+
+        Parameters
+        ----------
+        vsam_size : float
+            Scene size. Just to make the plot look nicer. You can choose any value.
+            An advice is to choose a value bigger than the sample's largest dimension.
+        renderer : str
+            Choose a renderer to plot. if you are using jupyter, 
+            then renderer = "notebook"; if you are using colab, 
+            then renderer = "colab"; if you are using spyder, 
+            then renderer = "browser". 
+        plot_elemcenter : bool
+            wether or not to plot the element center for visual inspection
+        """
+        fig = self.plot_sample(vsam_size = vsam_size, renderer=renderer,
+                   save_state = save_state, path = path, filename = filename,
+                   plot_elemcenter = plot_elemcenter)
+        
+        # add the sources
+        fig = self.plot_source(fig)
+        # add the receivers
+        fig = self.plot_receivers(fig)
+
         pio.renderers.default = renderer
         if save_state:
             fig.write_image(path+filename+'.pdf', scale=2)
@@ -687,3 +831,208 @@ def bemflush_pscat_tri(r_coord, nodes, elem_surf, areas,
     return p_scat
 
 
+def bemflush_uzscat_tri(r_coord, nodes, elem_surf, areas, 
+                   Nksi, Nweights, k0, beta, ps):
+    """ Calculates the uz component at a receiver
+    
+    Parameters
+    -------------
+    r_coord : numpy ndarray (1 x 3)
+        The coordinates of the receiver
+    nodesxy : numpy ndarray (2 x nnodes)
+        x-y coordinates of nodes (z is always 0)
+    elem_surf : numpy ndarray (nel x 3)
+        indices of nodes making up the element
+    areas : numpy array (nel x 1)
+        area of each element
+    Nzeta : numpy ndarray
+        zeta matrix
+    Nweights : numpy array
+        weights array
+    k0 : float
+        wave number
+    beta : complex float
+        surface admitance
+    ps : numpy array (nel x 1)
+        surface sound pressure
+    
+    Returns
+    -------------
+    uz_scat : float
+        scattered z component of particle velocity (complex)
+    """
+    # Number of elements and jacobian
+    Nel = elem_surf.shape[0]
+    # Initialization
+    gfield = np.zeros(Nel, dtype = np.complex64)
+    #Loop through elements once
+    for j in np.arange(Nel):
+        # Get nodes of element
+        nodes_of_el = nodes[elem_surf[j]]
+        nx = np.array(nodes_of_el[:,0])
+        ny = np.array(nodes_of_el[:,1])
+        area = areas[j]
+        # Integrate
+        gfield[j], _, _ = gaussint_tri_uz(r_coord, nx, ny, area,
+                                          Nksi, Nweights, k0, beta = beta)
+        
+    # Scattered pressure    
+    uz_scat = np.dot(gfield, ps)
+    return uz_scat
+
+@njit
+def gaussint_tri_uz(r_coord, nx, ny, area, Nksi, Nweights, k0, beta = 1+0*1j):
+    # Vector of receiver coordinates (for vectorized integration)
+    x_coord = r_coord[0] * np.ones(Nksi.shape[1])
+    y_coord = r_coord[1] * np.ones(Nksi.shape[1])
+    z_coord = r_coord[2] * np.ones(Nksi.shape[1])
+    # Jacobian of squared element
+    jacobian = area*2 
+    # Gauss points on local element
+    xksi = np.dot(nx, Nksi) #nodes[:,0] @ Nksi
+    yksi = np.dot(ny, Nksi) #nodes[:,1] @ Nksi
+    # Calculate the distance from el center to transformed integration points
+    r = ((x_coord - xksi)**2 + (y_coord - yksi)**2 + z_coord**2)**0.5
+    # Calculate green function
+    g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) *\
+        (1/(1j*k0*r) + 1) * (r_coord[2]/r) * jacobian
+    ival = np.sum((Nweights*g))#np.dot(Nweights, g) #g @ Nweights
+    return ival, xksi, yksi
+
+def bemflush_uxscat_tri(r_coord, nodes, elem_surf, areas, 
+                   Nksi, Nweights, k0, beta, ps):
+    """ Calculates the ux component at a receiver
+    
+    Parameters
+    -------------
+    r_coord : numpy ndarray (1 x 3)
+        The coordinates of the receiver
+    nodesxy : numpy ndarray (2 x nnodes)
+        x-y coordinates of nodes (z is always 0)
+    elem_surf : numpy ndarray (nel x 3)
+        indices of nodes making up the element
+    areas : numpy array (nel x 1)
+        area of each element
+    Nzeta : numpy ndarray
+        zeta matrix
+    Nweights : numpy array
+        weights array
+    k0 : float
+        wave number
+    beta : complex float
+        surface admitance
+    ps : numpy array (nel x 1)
+        surface sound pressure
+    
+    Returns
+    -------------
+    ux_scat : float
+        scattered x component of particle velocity (complex)
+    """
+    # Number of elements and jacobian
+    Nel = elem_surf.shape[0]
+    # Initialization
+    gfield = np.zeros(Nel, dtype = np.complex64)
+    #Loop through elements once
+    for j in np.arange(Nel):
+        # Get nodes of element
+        nodes_of_el = nodes[elem_surf[j]]
+        nx = np.array(nodes_of_el[:,0])
+        ny = np.array(nodes_of_el[:,1])
+        area = areas[j]
+        # Integrate
+        gfield[j], _, _ = gaussint_tri_ux(r_coord, nx, ny, area,
+                                          Nksi, Nweights, k0, beta = beta)
+        
+    # Scattered pressure    
+    ux_scat = np.dot(gfield, ps)
+    return ux_scat
+
+@njit
+def gaussint_tri_ux(r_coord, nx, ny, area, Nksi, Nweights, k0, beta = 1+0*1j):
+    # Vector of receiver coordinates (for vectorized integration)
+    x_coord = r_coord[0] * np.ones(Nksi.shape[1])
+    y_coord = r_coord[1] * np.ones(Nksi.shape[1])
+    z_coord = r_coord[2] * np.ones(Nksi.shape[1])
+    # Jacobian of squared element
+    jacobian = area*2 
+    # Gauss points on local element
+    xksi = np.dot(nx, Nksi) #nodes[:,0] @ Nksi
+    yksi = np.dot(ny, Nksi) #nodes[:,1] @ Nksi
+    xsm = x_coord-xksi
+    # Calculate the distance from el center to transformed integration points
+    r = ((x_coord - xksi)**2 + (y_coord - yksi)**2 + z_coord**2)**0.5
+    # Calculate green function
+    g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) *\
+        (1/(1j*k0*r) + 1) * (xsm/r) * jacobian
+    ival = np.sum((Nweights*g))#np.dot(Nweights, g) #g @ Nweights
+    return ival, xksi, yksi
+
+def bemflush_uyscat_tri(r_coord, nodes, elem_surf, areas, 
+                   Nksi, Nweights, k0, beta, ps):
+    """ Calculates the uy component at a receiver
+    
+    Parameters
+    -------------
+    r_coord : numpy ndarray (1 x 3)
+        The coordinates of the receiver
+    nodesxy : numpy ndarray (2 x nnodes)
+        x-y coordinates of nodes (z is always 0)
+    elem_surf : numpy ndarray (nel x 3)
+        indices of nodes making up the element
+    areas : numpy array (nel x 1)
+        area of each element
+    Nzeta : numpy ndarray
+        zeta matrix
+    Nweights : numpy array
+        weights array
+    k0 : float
+        wave number
+    beta : complex float
+        surface admitance
+    ps : numpy array (nel x 1)
+        surface sound pressure
+    
+    Returns
+    -------------
+    uy_scat : float
+        scattered x component of particle velocity (complex)
+    """
+    # Number of elements and jacobian
+    Nel = elem_surf.shape[0]
+    # Initialization
+    gfield = np.zeros(Nel, dtype = np.complex64)
+    #Loop through elements once
+    for j in np.arange(Nel):
+        # Get nodes of element
+        nodes_of_el = nodes[elem_surf[j]]
+        nx = np.array(nodes_of_el[:,0])
+        ny = np.array(nodes_of_el[:,1])
+        area = areas[j]
+        # Integrate
+        gfield[j], _, _ = gaussint_tri_uy(r_coord, nx, ny, area,
+                                          Nksi, Nweights, k0, beta = beta)
+        
+    # Scattered pressure    
+    uy_scat = np.dot(gfield, ps)
+    return uy_scat
+
+@njit
+def gaussint_tri_uy(r_coord, nx, ny, area, Nksi, Nweights, k0, beta = 1+0*1j):
+    # Vector of receiver coordinates (for vectorized integration)
+    x_coord = r_coord[0] * np.ones(Nksi.shape[1])
+    y_coord = r_coord[1] * np.ones(Nksi.shape[1])
+    z_coord = r_coord[2] * np.ones(Nksi.shape[1])
+    # Jacobian of squared element
+    jacobian = area*2 
+    # Gauss points on local element
+    xksi = np.dot(nx, Nksi) #nodes[:,0] @ Nksi
+    yksi = np.dot(ny, Nksi) #nodes[:,1] @ Nksi
+    ysm = y_coord-yksi
+    # Calculate the distance from el center to transformed integration points
+    r = ((x_coord - xksi)**2 + (y_coord - yksi)**2 + z_coord**2)**0.5
+    # Calculate green function
+    g = -1j * k0 * beta * (np.exp(-1j * k0 * r)/(4 * np.pi * r)) *\
+        (1/(1j*k0*r) + 1) * (ysm/r) * jacobian
+    ival = np.sum((Nweights*g))#np.dot(Nweights, g) #g @ Nweights
+    return ival, xksi, yksi

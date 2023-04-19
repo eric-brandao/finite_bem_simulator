@@ -1,7 +1,7 @@
 import numpy as np
 from controlsair import sph2cart, cart2sph
 from rayinidir import RayInitialDirections
-
+import matplotlib.pyplot as plt
 
 class Source():
     """ A sound source class to initialize some types of sources
@@ -76,7 +76,8 @@ class Source():
         self.coord[:,1] = y_coord.flatten()
         self.coord[:,2] = z_coord.flatten()
 
-    def set_ssph_sources(self, radius = 1.0, ns = 100, angle_max=90, random = False, plot=False):
+    def set_ssph_sources(self, radius = 1.0, ns = 100, angle_max=90, 
+                         random = False, plot=False, r_min = 0.5):
         """ Generate an array of sound sources over a surface of a sphere.
 
         The method will overwrite self.coord to be a matrix where each line
@@ -99,13 +100,19 @@ class Source():
         """
         # Define theta and phi discretization
         directions = RayInitialDirections()
-        directions, _ = directions.isotropic_rays(Nrays = ns)
+        directions, _, _ = directions.isotropic_rays(Nrays = ns)
         #print('The number of sources is: {}'.format(n_waves))
-        if plot:
-            directions.plot_points()
         _, theta,_ = cart2sph(directions[:,0], directions[:,1], directions[:,2])
-        theta_id = np.where(np.logical_and(theta > np.deg2rad(0), theta < np.deg2rad(angle_max)))
-        self.coord = radius * directions[theta_id[0]]
+        theta_id = np.where(np.logical_and(theta < np.deg2rad(90), theta > np.deg2rad(angle_max)))
+        theta_id = np.where(directions[:,2] >= r_min)
+        self.coord = radius * directions[:]
+        if plot:
+            fig = plt.figure()
+            ax = fig.gca(projection='3d')
+            ax.scatter(self.coord[:,0], self.coord[:,1], self.coord[:,2])
+            ax.set_xlim((-2*radius/2, 2*radius/2))
+            ax.set_ylim((-2*radius/2, 2*radius/2))
+            ax.set_zlim((-2*radius/2, 2*radius/2))
 
 
     # def set_vsph_sources(self, radii_span = (1.0, 10.0), ns = 100, random = False):
