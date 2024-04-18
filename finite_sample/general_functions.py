@@ -80,7 +80,7 @@ def add_noise(signal_spk, snr = 30, avg_across_recs = False):
         signal_spk_noisy : numpy ndArray
             Noisy signal spectrum. Same shape as signal_spk
         """
-        if uncorr:
+        if avg_across_recs:
             signalPower_lin = (np.abs(signal_spk)/np.sqrt(2))**2
             signalPower_dB = 10 * np.log10(signalPower_lin)
             noisePower_dB = signalPower_dB - snr
@@ -132,7 +132,7 @@ def add_noise2(signal_spk, snr = 30, uncorr = False):
             signalAmp_dB = 10 * np.log10(signalAmp_lin)
             noiseAmp_dB = signalAmp_dB - snr
             noiseAmp_lin = 20 ** (noiseAmp_dB/10)
-        #np.random.seed(0)
+        # np.random.seed(0)
         noise = np.random.normal(0, np.sqrt(noiseAmp_lin/2), size = signal_spk.shape) +\
                 1j*np.random.normal(0, np.sqrt(noiseAmp_lin/2), size = signal_spk.shape)
         signal_spk_noisy = signal_spk + noise

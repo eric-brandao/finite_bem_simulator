@@ -219,7 +219,7 @@ class RayInitialDirections():
         A simple method to plot the ray directions as a scatter plot.
         '''
         fig = plt.figure()
-        ax = fig.gca(projection='3d')
+        ax = plt.axes(projection ="3d")
         ax.scatter(self.vinit[:,0], self.vinit[:,1], self.vinit[:,2],
             color='blue')
         ax.set_xlabel(r'$k_x$')

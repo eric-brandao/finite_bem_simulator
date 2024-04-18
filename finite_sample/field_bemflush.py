@@ -181,8 +181,8 @@ class BEMFlushSq(object):
             el_size = self.air.c0 / (Nel_per_wavelenth * freq_max)
         #print('The el_size is: {}'.format(el_size))
         # Number of elementes spaning x and y directions
-        Nel_x = np.int(np.ceil(Lx / el_size))
-        Nel_y = np.int(np.ceil(Ly / el_size))
+        Nel_x = int(np.ceil(Lx / el_size))
+        Nel_y = int(np.ceil(Ly / el_size))
         # x and y coordinates of element's center
         xjc = np.linspace(-Lx/2 + el_size/2, Lx/2 - el_size/2, Nel_x)
         yjc = np.linspace(-Ly/2 + el_size/2, Ly/2 - el_size/2, Nel_y)
